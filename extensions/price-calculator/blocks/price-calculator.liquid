@@ -1,0 +1,706 @@
+{% comment %} MyCarat Price Calculator Widget {% endcomment %}
+
+<div id="mycarat-calculator"
+  data-product-id="{{ product.id | json }}"
+  data-app-url="{{ shop.metafields.mycarat.app_url }}"
+  data-product-type="{{ product.type }}"
+  data-product-tags="{{ product.tags | join: ',' }}"
+  style="font-family: inherit;">
+
+  {% comment %} Stage 1: Price Anchor Pills {% endcomment %}
+  <div id="mc-price-anchors" style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+    <div class="mc-pill" style="background:#f8f4ef; border:1px solid #d4af7a; border-radius:20px; padding:6px 16px; font-size:13px;">
+      💎 Lab Grown: <strong id="mc-lab-anchor">Loading...</strong>
+    </div>
+    <div class="mc-pill" style="background:#f8f4ef; border:1px solid #d4af7a; border-radius:20px; padding:6px 16px; font-size:13px;">
+      ✨ Natural: <strong id="mc-natural-anchor">Loading...</strong>
+    </div>
+  </div>
+
+  {% comment %} Stage 2: Made to Order Message {% endcomment %}
+  <div id="mc-made-to-order" style="background:#faf7f2; border-left:3px solid #d4af7a; padding:12px 16px; margin-bottom:20px; border-radius:0 8px 8px 0;">
+    <p style="margin:0; font-size:14px; color:#5a4a3a; line-height:1.5;">
+      ✦ Every piece is <strong>made to order</strong> — crafted to your exact specifications. 
+      Choose your preferred metal, stone grade and certification below.
+    </p>
+  </div>
+
+  {% comment %} Stage 2.5: Size Selector {% endcomment %}
+  <div id="mc-size-selector" style="display:none; margin-bottom:20px;">
+    <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+      📏 <span id="mc-size-label">Size</span>
+    </div>
+    <select id="mc-size-select"
+      onchange="mcOnSizeChange(this.value)"
+      style="width:100%; padding:10px 12px; border:2px solid #e0d5c5; border-radius:8px; font-size:14px; color:#2c2c2c; background:#fff; cursor:pointer; outline:none; appearance:auto;">
+    </select>
+  </div>
+
+  {% comment %} Stage 2.6: Metal Colour Selector {% endcomment %}
+  <div id="mc-colour-selector" style="display:none; margin-bottom:20px;">
+    <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+      ✦ Metal Colour
+    </div>
+    <div id="mc-colour-swatches" style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;"></div>
+  </div>
+
+  {% comment %} Stage 3: Default Price Cards {% endcomment %}
+  <div id="mc-price-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+    
+    {% comment %} Lab Grown Card {% endcomment %}
+    <div id="mc-lab-card" style="border:2px solid #e0d5c5; border-radius:12px; padding:16px; background:#fff; cursor:pointer; transition:all 0.2s;">
+      <div style="font-size:12px; color:#888; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">Lab Grown</div>
+      <div style="font-size:22px; font-weight:700; color:#2c2c2c; margin-bottom:4px;">
+        ₹<span id="mc-lab-price">—</span>
+      </div>
+      <div style="font-size:11px; color:#aaa; margin-bottom:12px;">
+        ₹<span id="mc-lab-min">—</span> – ₹<span id="mc-lab-max">—</span>
+      </div>
+      <div style="font-size:11px; color:#888; margin-bottom:12px; line-height:1.4;" id="mc-lab-config">
+        18KT · EF VVS · E VVS2 · IGI
+      </div>
+      <div style="display:flex; gap:8px; flex-direction:column;">
+        <button onclick="mcAddToCart('Lab', this)" 
+          style="width:100%; padding:8px; background:#2c2c2c; color:#fff; border:none; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;">
+          Add to Cart
+        </button>
+        <button onclick="mcShowCustomise('Lab')"
+          style="width:100%; padding:8px; background:#fff; color:#2c2c2c; border:1px solid #2c2c2c; border-radius:6px; font-size:12px; cursor:pointer;">
+          Customise
+        </button>
+      </div>
+    </div>
+
+    {% comment %} Natural Card {% endcomment %}
+    <div id="mc-natural-card" style="border:2px solid #e0d5c5; border-radius:12px; padding:16px; background:#fff; cursor:pointer; transition:all 0.2s;">
+      <div style="font-size:12px; color:#888; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">Natural</div>
+      <div style="font-size:22px; font-weight:700; color:#2c2c2c; margin-bottom:4px;">
+        ₹<span id="mc-natural-price">—</span>
+      </div>
+      <div style="font-size:11px; color:#aaa; margin-bottom:12px;">
+        ₹<span id="mc-natural-min">—</span> – ₹<span id="mc-natural-max">—</span>
+      </div>
+      <div style="font-size:11px; color:#888; margin-bottom:12px; line-height:1.4;" id="mc-natural-config">
+        18KT · FG VS · H VS2 · IGI
+      </div>
+      <div style="display:flex; gap:8px; flex-direction:column;">
+        <button onclick="mcAddToCart('Natural', this)"
+          style="width:100%; padding:8px; background:#2c2c2c; color:#fff; border:none; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;">
+          Add to Cart
+        </button>
+        <button onclick="mcShowCustomise('Natural')"
+          style="width:100%; padding:8px; background:#fff; color:#2c2c2c; border:1px solid #2c2c2c; border-radius:6px; font-size:12px; cursor:pointer;">
+          Customise
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {% comment %} Stage 4: Customisation Panel {% endcomment %}
+  <div id="mc-customise-panel" style="display:none; border:1px solid #e0d5c5; border-radius:12px; padding:20px; background:#faf7f2;">
+    
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 id="mc-customise-title" style="margin:0; font-size:16px; color:#2c2c2c;">Customise — Lab Grown</h3>
+      <button onclick="mcHideCustomise()" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
+    </div>
+
+    {% comment %} Metal Section {% endcomment %}
+    <div class="mc-section" style="margin-bottom:20px;">
+      <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">⚙️ Metal Purity</div>
+      <div id="mc-metal-options" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    </div>
+
+    {% comment %} Diamond Section {% endcomment %}
+    <div id="mc-diamond-section" class="mc-section" style="margin-bottom:20px; display:none;">
+      <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">💎 Diamond Quality</div>
+      <div id="mc-diamond-options" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    </div>
+
+    {% comment %} Solitaire Section {% endcomment %}
+    <div id="mc-solitaire-section" class="mc-section" style="margin-bottom:20px; display:none;">
+      <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">💍 Solitaire</div>
+      
+      <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Colour</div>
+      <div id="mc-solitaire-colour-options" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+      
+      <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Clarity</div>
+      <div id="mc-solitaire-clarity-options" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+
+      <div id="mc-solitaire-cut-section" style="display:none;">
+        <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Cut · Polish · Symmetry</div>
+        <div id="mc-solitaire-cut-options" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+      </div>
+
+      <div id="mc-solitaire-fluor-section" style="display:none;">
+        <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Fluorescence</div>
+        <div id="mc-solitaire-fluor-options" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+      </div>
+
+      <div id="mc-solitaire-cert-section" style="display:none;">
+        <div style="font-size:11px; color:#aaa; margin-bottom:8px;">Certification</div>
+        <div id="mc-solitaire-cert-options" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    {% comment %} Gemstone Section {% endcomment %}
+    <div id="mc-gemstone-section" class="mc-section" style="margin-bottom:20px; display:none;">
+      <div style="font-size:12px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">🟢 Gemstone Quality</div>
+      <div id="mc-gemstone-options" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    </div>
+
+    {% comment %} Delta Summary + Apply {% endcomment %}
+    <div style="border-top:1px solid #e0d5c5; padding-top:16px; margin-top:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-size:13px; color:#888;">Estimated adjustment:</span>
+        <span id="mc-delta-total" style="font-size:16px; font-weight:700; color:#2c2c2c;">₹0</span>
+      </div>
+      <button onclick="mcApplyChanges()"
+        style="width:100%; padding:12px; background:#d4af7a; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; margin-bottom:8px;">
+        Apply Changes
+      </button>
+      <div id="mc-custom-price-section" style="display:none; margin-top:12px; text-align:center;">
+        <div style="font-size:12px; color:#888; margin-bottom:4px;">Your customised price</div>
+        <div style="font-size:28px; font-weight:700; color:#2c2c2c;">₹<span id="mc-custom-price">—</span></div>
+        <button onclick="mcAddToCart('custom', this)"
+          style="width:100%; padding:12px; background:#2c2c2c; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; margin-top:12px;">
+          Add to Cart
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  const el = document.getElementById('mycarat-calculator');
+  const productId = el.dataset.productId;
+  console.log('MyCarat productId raw:', productId);
+  const APP_URL = 'https://mycarat-price-calc.fly.dev';
+  const productType = el.dataset.productType || '';
+  const productTags = (el.dataset.productTags || '').split(',').map(t => t.trim().toLowerCase());
+
+  // State
+  let priceData = null;
+  let activeType = null; // 'Lab' or 'Natural'
+  let selections = {};
+  let customPrice = null;
+  let selectedSize = null;
+
+  const rawVariants = {{ product.variants | json }};
+  const variantOptionNames = {{ product.options | json }};
+  const colourOptionIdx = variantOptionNames.findIndex(n => /colour|color/i.test(n));
+  const hasColourOption = colourOptionIdx >= 0;
+  let selectedVariantId = {{ product.variants.first.id }};
+  let selectedColour = '';
+
+  const SIZE_OPTIONS = {
+    'Rings':     { label: 'Ring Size',      options: ['6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','23','24','25','26'] },
+    'Necklaces': { label: 'Length',         options: ['14"','16"','18"','20"','22"','24"','26"','28"','30"'] },
+    'Anklets':   { label: 'Anklet Length',  options: ['18cm','19cm','20cm','21cm','22cm','23cm','24cm','25cm','26cm','27cm','28cm'] },
+    'Bangles':   { label: 'Bangle Size',    options: ['2/0','2/2','2/4','2/6','2/8','2/10','2/12','2/14','2/16'] },
+    'Watches':   { label: 'Wrist Size',     options: ['13cm','14cm','15cm','16cm','17cm','18cm','19cm','20cm','21cm','22cm'] },
+  };
+  const BRACELET_OPTIONS = {
+    rigid: { label: 'Bangle Size',     options: ['2/0','2/2','2/4','2/6','2/8','2/10','2/12','2/14','2/16'] },
+    loose: { label: 'Bracelet Length', options: ['14cm','15cm','16cm','17cm','18cm','19cm','20cm','21cm','22cm','23cm','24cm'] },
+  };
+
+  function getSizeConfig() {
+    if (productType === 'Bracelets') {
+      if (productTags.includes('rigid')) return BRACELET_OPTIONS.rigid;
+      if (productTags.includes('loose')) return BRACELET_OPTIONS.loose;
+      return null;
+    }
+    return SIZE_OPTIONS[productType] || null;
+  }
+
+  function renderSizeSelector() {
+    const config = getSizeConfig();
+    const container = document.getElementById('mc-size-selector');
+    if (!config) { container.style.display = 'none'; return; }
+    document.getElementById('mc-size-label').textContent = config.label;
+    const select = document.getElementById('mc-size-select');
+    select.innerHTML = `<option value="">— Select ${config.label} —</option>`;
+    config.options.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      select.appendChild(o);
+    });
+    container.style.display = 'block';
+  }
+
+  window.mcOnSizeChange = function(value) {
+    selectedSize = value || null;
+  };
+
+  const COLOUR_MAP = {
+    'yellow gold': '#E8B923',
+    'gold':        '#E8B923',
+    'rose gold':   '#C9956C',
+    'white gold':  '#E0E0E0',
+    'white':       '#E0E0E0',
+    'silver':      '#C0C0C0',
+    'platinum':    '#E5E4E2',
+  };
+
+  function renderColourSelector() {
+    const container = document.getElementById('mc-colour-selector');
+    if (!hasColourOption || rawVariants.length <= 1) { container.style.display = 'none'; return; }
+    const seen = new Set();
+    const swatchContainer = document.getElementById('mc-colour-swatches');
+    swatchContainer.innerHTML = '';
+    rawVariants.forEach(v => {
+      const colour = v.options[colourOptionIdx];
+      if (seen.has(colour)) return;
+      const isFirst = seen.size === 0;
+      seen.add(colour);
+      if (isFirst) { selectedVariantId = v.id; selectedColour = colour; }
+      const hex = COLOUR_MAP[colour.toLowerCase()] || '#888';
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;';
+      wrapper.dataset.variantId = v.id;
+      wrapper.onclick = function() { mcSelectColour(v.id, colour, this); };
+      const circle = document.createElement('div');
+      circle.style.cssText = `width:28px;height:28px;border-radius:50%;background:${hex};border:2px solid ${isFirst ? '#2c2c2c' : 'transparent'};box-shadow:0 0 0 1px #ccc;box-sizing:border-box;`;
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:10px;color:#888;text-align:center;max-width:52px;line-height:1.3;';
+      label.textContent = colour;
+      wrapper.appendChild(circle);
+      wrapper.appendChild(label);
+      swatchContainer.appendChild(wrapper);
+    });
+    container.style.display = 'block';
+  }
+
+  function mcSelectColour(variantId, colour, wrapper) {
+    selectedVariantId = variantId;
+    selectedColour = colour;
+    document.querySelectorAll('#mc-colour-swatches > div').forEach(w => {
+      w.querySelector('div').style.border = '2px solid transparent';
+    });
+    wrapper.querySelector('div').style.border = '2px solid #2c2c2c';
+
+    // Trigger theme's native variant change so product images swap
+    // .click() simulates a real user click — Dawn's variant-radios responds to this
+    const radio = document.querySelector(`input[type="radio"][value="${colour}"]`);
+    if (radio) { radio.click(); return; }
+    // Fallback for select-based themes
+    for (const sel of document.querySelectorAll('select')) {
+      const opt = Array.from(sel.options).find(o => o.value === colour || o.text === colour);
+      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); return; }
+    }
+  }
+
+  const DEFAULTS = {
+    Lab: { metal: '18KT', diamond: 'EF VVS', solitaire_colour: 'E', solitaire_clarity: 'VVS2', solitaire_cut: '3EX', solitaire_fluorescence: 'None', solitaire_certification: 'IGI', gemstone: 'Premium' },
+    Natural: { metal: '18KT', diamond: 'FG VS', solitaire_colour: 'H', solitaire_clarity: 'VS2', solitaire_cut: '3VG+', solitaire_fluorescence: 'Faint', solitaire_certification: 'IGI', gemstone: 'Premium' }
+  };
+
+  const fmt = (n) => Math.round(n).toLocaleString('en-IN');
+
+  async function loadPrices() {
+    try {
+      const fullProductId = `gid://shopify/Product/${productId}`;
+      const encodedId = encodeURIComponent(fullProductId);
+      const res = await fetch(`${APP_URL}/api/product-prices?product_id=${encodedId}`);
+      priceData = await res.json();
+      if (priceData.success) {
+        renderAnchors();
+        renderCards();
+      }
+    } catch(e) {
+      console.error('MyCarat: Failed to load prices', e);
+    }
+  }
+
+  function renderAnchors() {
+    document.getElementById('mc-lab-anchor').textContent = '₹' + fmt(priceData.prices.lab.default);
+    document.getElementById('mc-natural-anchor').textContent = '₹' + fmt(priceData.prices.natural.default);
+  }
+
+  function renderCards() {
+    document.getElementById('mc-lab-price').textContent = fmt(priceData.prices.lab.default);
+    document.getElementById('mc-lab-min').textContent = fmt(priceData.prices.lab.min);
+    document.getElementById('mc-lab-max').textContent = fmt(priceData.prices.lab.max);
+    document.getElementById('mc-natural-price').textContent = fmt(priceData.prices.natural.default);
+    document.getElementById('mc-natural-min').textContent = fmt(priceData.prices.natural.min);
+    document.getElementById('mc-natural-max').textContent = fmt(priceData.prices.natural.max);
+  }
+
+  function getDelta(type, component, value) {
+    if (!priceData) return 0;
+    const d = priceData.deltas.find(x => x.diamond_type === type && x.component === component && x.option_value === value);
+    return d ? parseFloat(d.delta_amount) : null;
+  }
+
+  function makeOptionBox(containerId, selectionKey, value, delta, isSelected) {
+    const box = document.createElement('div');
+    const deltaText = delta === 0 ? 'Default' : (delta > 0 ? '+₹' + fmt(delta) : '-₹' + fmt(Math.abs(delta)));
+
+    box.dataset.value = value;
+    box.style.cssText = `
+      padding: 8px 12px; border-radius: 8px; cursor: pointer; text-align: center; min-width: 70px;
+      border: 2px solid ${isSelected ? '#d4af7a' : '#e0d5c5'};
+      background: ${isSelected ? '#fdf6ec' : '#fff'};
+      transition: all 0.15s;
+    `;
+    box.innerHTML = `
+      <div style="font-size:13px; font-weight:600; color:#2c2c2c; pointer-events:none;">${value}</div>
+      <div data-delta-display style="font-size:10px; color:${delta > 0 ? '#c0392b' : delta < 0 ? '#27ae60' : '#888'}; margin-top:2px; pointer-events:none;">${deltaText}</div>
+    `;
+
+    box.addEventListener('click', () => {
+      selections[selectionKey] = value;
+      const container = document.getElementById(containerId);
+      container.querySelectorAll('[data-value]').forEach(sibling => {
+        const isNowSelected = sibling.dataset.value === value;
+        sibling.style.border = `2px solid ${isNowSelected ? '#d4af7a' : '#e0d5c5'}`;
+        sibling.style.background = isNowSelected ? '#fdf6ec' : '#fff';
+      });
+      updateDeltaTotal(activeType);
+      document.getElementById('mc-custom-price-section').style.display = 'none';
+    });
+
+    return box;
+  }
+
+  function renderOptions(type) {
+    selections = { ...DEFAULTS[type] };
+
+    // --- Metal ---
+    const metalContainer = document.getElementById('mc-metal-options');
+    metalContainer.innerHTML = '';
+    ['9KT', '14KT', '18KT'].forEach(purity => {
+      const delta = getDelta(type, 'metal', purity);
+      if (delta === null) return;
+      metalContainer.appendChild(
+        makeOptionBox('mc-metal-options', 'metal', purity, delta, purity === selections.metal)
+      );
+    });
+
+    // --- Diamond ---
+    const diamondOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'diamond');
+    const diamondSection = document.getElementById('mc-diamond-section');
+    if (diamondOptions.length > 0) {
+      diamondSection.style.display = 'block';
+      const diamondContainer = document.getElementById('mc-diamond-options');
+      diamondContainer.innerHTML = '';
+      diamondOptions.forEach(opt => {
+        diamondContainer.appendChild(
+          makeOptionBox('mc-diamond-options', 'diamond', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.diamond)
+        );
+      });
+    } else {
+      diamondSection.style.display = 'none';
+    }
+
+    // --- Solitaire ---
+    const solColourOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'solitaire_colour');
+    const solitaireSection = document.getElementById('mc-solitaire-section');
+    if (solColourOptions.length > 0) {
+      solitaireSection.style.display = 'block';
+
+      const colourContainer = document.getElementById('mc-solitaire-colour-options');
+      colourContainer.innerHTML = '';
+      solColourOptions.forEach(opt => {
+        colourContainer.appendChild(
+          makeOptionBox('mc-solitaire-colour-options', 'solitaire_colour', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.solitaire_colour)
+        );
+      });
+
+      const clarityContainer = document.getElementById('mc-solitaire-clarity-options');
+      clarityContainer.innerHTML = '';
+      priceData.deltas.filter(d => d.diamond_type === type && d.component === 'solitaire_clarity').forEach(opt => {
+        clarityContainer.appendChild(
+          makeOptionBox('mc-solitaire-clarity-options', 'solitaire_clarity', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.solitaire_clarity)
+        );
+      });
+
+      const cutOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'solitaire_cut');
+      document.getElementById('mc-solitaire-cut-section').style.display = cutOptions.length > 0 ? 'block' : 'none';
+      if (cutOptions.length > 0) {
+        const cutContainer = document.getElementById('mc-solitaire-cut-options');
+        cutContainer.innerHTML = '';
+        cutOptions.forEach(opt => {
+          cutContainer.appendChild(
+            makeOptionBox('mc-solitaire-cut-options', 'solitaire_cut', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.solitaire_cut)
+          );
+        });
+      }
+
+      const fluorOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'solitaire_fluorescence');
+      document.getElementById('mc-solitaire-fluor-section').style.display = fluorOptions.length > 0 ? 'block' : 'none';
+      if (fluorOptions.length > 0) {
+        const fluorContainer = document.getElementById('mc-solitaire-fluor-options');
+        fluorContainer.innerHTML = '';
+        fluorOptions.forEach(opt => {
+          fluorContainer.appendChild(
+            makeOptionBox('mc-solitaire-fluor-options', 'solitaire_fluorescence', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.solitaire_fluorescence)
+          );
+        });
+      }
+
+      const certOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'solitaire_certification');
+      document.getElementById('mc-solitaire-cert-section').style.display = certOptions.length > 0 ? 'block' : 'none';
+      if (certOptions.length > 0) {
+        const certContainer = document.getElementById('mc-solitaire-cert-options');
+        certContainer.innerHTML = '';
+        certOptions.forEach(opt => {
+          certContainer.appendChild(
+            makeOptionBox('mc-solitaire-cert-options', 'solitaire_certification', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.solitaire_certification)
+          );
+        });
+      }
+    } else {
+      solitaireSection.style.display = 'none';
+    }
+
+    // --- Gemstone ---
+    const gemOptions = priceData.deltas.filter(d => d.diamond_type === type && d.component === 'gemstone');
+    const gemSection = document.getElementById('mc-gemstone-section');
+    if (gemOptions.length > 0) {
+      gemSection.style.display = 'block';
+      const gemContainer = document.getElementById('mc-gemstone-options');
+      gemContainer.innerHTML = '';
+      gemOptions.forEach(opt => {
+        gemContainer.appendChild(
+          makeOptionBox('mc-gemstone-options', 'gemstone', opt.option_value, parseFloat(opt.delta_amount), opt.option_value === selections.gemstone)
+        );
+      });
+    } else {
+      gemSection.style.display = 'none';
+    }
+
+    updateDeltaTotal(type);
+  }
+
+  function updateDeltaTotal(type) {
+    let totalDelta = 0;
+
+    // Metal delta
+    if (selections.metal) {
+      const d = getDelta(type, 'metal', selections.metal);
+      if (d) totalDelta += d;
+    }
+
+    // Diamond delta
+    if (selections.diamond) {
+      const d = getDelta(type, 'diamond', selections.diamond);
+      if (d) totalDelta += d;
+    }
+
+    // Solitaire delta — use combined (exact) if available, else fall back to summing individual deltas
+    const hasSolCombined = priceData.deltas.some(x => x.diamond_type === type && x.component === 'solitaire_combined');
+    if (hasSolCombined) {
+      const combinedKey = type === 'Lab'
+        ? `${selections.solitaire_colour}_${selections.solitaire_clarity}`
+        : `${selections.solitaire_colour}_${selections.solitaire_clarity}_${selections.solitaire_cut}_${selections.solitaire_fluorescence}_${selections.solitaire_certification}`;
+      const d = getDelta(type, 'solitaire_combined', combinedKey);
+      if (d !== null) totalDelta += d;
+    } else {
+      ['solitaire_colour', 'solitaire_clarity', 'solitaire_cut', 'solitaire_fluorescence', 'solitaire_certification'].forEach(comp => {
+        if (selections[comp]) {
+          const d = getDelta(type, comp, selections[comp]);
+          if (d) totalDelta += d;
+        }
+      });
+    }
+
+    // Gemstone delta
+    if (selections.gemstone) {
+      const d = getDelta(type, 'gemstone', selections.gemstone);
+      if (d) totalDelta += d;
+    }
+
+    const deltaEl = document.getElementById('mc-delta-total');
+    deltaEl.textContent = (totalDelta >= 0 ? '+₹' : '-₹') + fmt(Math.abs(totalDelta));
+    deltaEl.style.color = totalDelta > 0 ? '#c0392b' : totalDelta < 0 ? '#27ae60' : '#2c2c2c';
+
+    refreshSolOptionLabels(type);
+  }
+
+  function buildCombinedKey(type, sels) {
+    return type === 'Lab'
+      ? `${sels.solitaire_colour}_${sels.solitaire_clarity}`
+      : `${sels.solitaire_colour}_${sels.solitaire_clarity}_${sels.solitaire_cut}_${sels.solitaire_fluorescence}_${sels.solitaire_certification}`;
+  }
+
+  function refreshSolOptionLabels(type) {
+    const hasSolCombined = priceData && priceData.deltas.some(x => x.diamond_type === type && x.component === 'solitaire_combined');
+    if (!hasSolCombined) return;
+
+    const currentKey = buildCombinedKey(type, selections);
+    const currentCombined = getDelta(type, 'solitaire_combined', currentKey) || 0;
+
+    const solContainers = [
+      { id: 'mc-solitaire-colour-options',  key: 'solitaire_colour' },
+      { id: 'mc-solitaire-clarity-options', key: 'solitaire_clarity' },
+      { id: 'mc-solitaire-cut-options',     key: 'solitaire_cut' },
+      { id: 'mc-solitaire-fluor-options',   key: 'solitaire_fluorescence' },
+      { id: 'mc-solitaire-cert-options',    key: 'solitaire_certification' },
+    ];
+
+    solContainers.forEach(({ id, key }) => {
+      const container = document.getElementById(id);
+      if (!container) return;
+      container.querySelectorAll('[data-value]').forEach(box => {
+        const optValue = box.dataset.value;
+        const displayEl = box.querySelector('[data-delta-display]');
+        if (!displayEl) return;
+
+        const isSelected = selections[key] === optValue;
+        let marginalText, marginalColor;
+
+        if (isSelected) {
+          marginalText = 'Selected';
+          marginalColor = '#888';
+        } else {
+          const modSels = { ...selections, [key]: optValue };
+          const optKey = buildCombinedKey(type, modSels);
+          const optCombined = getDelta(type, 'solitaire_combined', optKey);
+          if (optCombined === null) {
+            marginalText = '—';
+            marginalColor = '#888';
+          } else {
+            const marginal = optCombined - currentCombined;
+            marginalText = marginal === 0 ? 'Same' : (marginal > 0 ? '+₹' + fmt(marginal) : '-₹' + fmt(Math.abs(marginal)));
+            marginalColor = marginal > 0 ? '#c0392b' : marginal < 0 ? '#27ae60' : '#888';
+          }
+        }
+
+        displayEl.textContent = marginalText;
+        displayEl.style.color = marginalColor;
+      });
+    });
+  }
+
+  window.mcShowCustomise = function(type) {
+    activeType = type;
+    document.getElementById('mc-customise-title').textContent = `Customise — ${type === 'Lab' ? 'Lab Grown' : 'Natural'}`;
+    document.getElementById('mc-customise-panel').style.display = 'block';
+    document.getElementById('mc-customise-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    renderOptions(type);
+  };
+
+  window.mcHideCustomise = function() {
+    document.getElementById('mc-customise-panel').style.display = 'none';
+    activeType = null;
+  };
+
+  window.mcApplyChanges = async function() {
+    if (!activeType || !priceData) return;
+
+    const btn = document.querySelector('[onclick="mcApplyChanges()"]');
+    btn.textContent = 'Calculating...';
+    btn.disabled = true;
+
+    try {
+      const params = {
+        product_id: `gid://shopify/Product/${productId}`,
+        metal_purity: selections.metal,
+        diamond_type: activeType === 'Lab' ? 'Lab Grown' : 'Natural',
+        diamond_colour_clarity: selections.diamond,
+        solitaire_type: activeType,
+        solitaire_colour: selections.solitaire_colour,
+        solitaire_clarity: selections.solitaire_clarity,
+        solitaire_cut: selections.solitaire_cut,
+        solitaire_fluorescence: selections.solitaire_fluorescence,
+        solitaire_certification: selections.solitaire_certification,
+        gemstone_type: activeType === 'Lab' ? 'Lab' : 'Natural',
+        gemstone_quality: selections.gemstone,
+      };
+
+      const res = await fetch(`${APP_URL}/api/calculate-price`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+
+      // FIX: use !== undefined instead of truthy check (total can be 0)
+      if (data.total !== undefined) {
+        customPrice = data.total;
+        document.getElementById('mc-custom-price').textContent = fmt(data.total);
+        document.getElementById('mc-custom-price-section').style.display = 'block';
+      }
+    } catch(e) {
+      console.error('MyCarat: Apply failed', e);
+    } finally {
+      btn.textContent = 'Apply Changes';
+      btn.disabled = false;
+    }
+  };
+
+  // FIX: accept btn as parameter instead of using event.target
+  window.mcAddToCart = async function(type, btn) {
+    const isCustom = type === 'custom';
+    const cartType = isCustom ? activeType : type;
+    const price = isCustom ? customPrice : (type === 'Lab' ? priceData.prices.lab.default : priceData.prices.natural.default);
+    const config = isCustom ? selections : DEFAULTS[type];
+
+    const sizeConfig = getSizeConfig();
+    if (sizeConfig && !selectedSize) {
+      btn.textContent = `Select ${sizeConfig.label} first`;
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = 'Add to Cart'; }, 2500);
+      return;
+    }
+
+    const properties = {
+      'Stone Type': cartType === 'Lab' ? 'Lab Grown' : 'Natural',
+      'Metal Purity': config.metal || '18KT',
+      'Diamond Quality': config.diamond || '',
+      'Solitaire Colour': config.solitaire_colour || '',
+      'Solitaire Clarity': config.solitaire_clarity || '',
+      ...(selectedSize && sizeConfig ? { [sizeConfig.label]: selectedSize } : {}),
+      'Calculated Price': '₹' + fmt(price),
+    };
+
+    btn.textContent = 'Preparing checkout…';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(APP_URL + '/api/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          variant_id: selectedVariantId,
+          calculated_price: parseFloat(price),
+          properties,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.invoiceUrl) {
+        window.location.href = data.invoiceUrl;
+      } else {
+        btn.textContent = 'Error — try again';
+        btn.style.background = '#c0392b';
+        btn.disabled = false;
+        setTimeout(() => { btn.textContent = 'Add to Cart'; btn.style.background = '#2c2c2c'; }, 3000);
+      }
+    } catch(e) {
+      console.error('MyCarat: Checkout failed', e);
+      btn.textContent = 'Error — try again';
+      btn.style.background = '#c0392b';
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = 'Add to Cart'; btn.style.background = '#2c2c2c'; }, 3000);
+    }
+  };
+
+  // Init
+  renderSizeSelector();
+  renderColourSelector();
+  loadPrices();
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Price Calculator",
+  "target": "section",
+  "settings": []
+}
+{% endschema %}

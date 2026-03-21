@@ -1,0 +1,872 @@
+{% doc %}
+  @prompt
+    Create custom CSS code to ensure buttons within carousel cards with video backgrounds are properly layered and visible. The buttons should appear on top of video backgrounds with proper z-index stacking, adequate padding around them, and maintain visibility regardless of the video content. The code should target buttons within carousel card blocks and ensure they are always visible and clickable above any background media., I want to increase visibility of the viedo so reduce the side, and prominance of the button, reduce the size of the button by 30%, move it to bottom of the carousel 
+{% enddoc %}
+{% assign ai_gen_id = block.id | replace: '_', '' | downcase %}
+
+{% style %}
+  .ai-video-carousel-{{ ai_gen_id }} {
+    display: block;
+    width: {{ block.settings.desktop_width_percent }}%;
+    max-width: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ai-video-carousel__container-{{ ai_gen_id }} {
+    position: relative;
+    width: 100%;
+  }
+
+  .ai-video-carousel__slides-{{ ai_gen_id }} {
+    display: flex;
+    transition: transform 0.5s ease;
+    width: 100%;
+  }
+
+  .ai-video-carousel__slide-{{ ai_gen_id }} {
+    min-width: 100%;
+    position: relative;
+    aspect-ratio: {{ block.settings.aspect_ratio }};
+    overflow: hidden;
+  }
+
+  .ai-video-carousel__video-wrapper-{{ ai_gen_id }} {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  .ai-video-carousel__video-{{ ai_gen_id }} {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .ai-video-carousel__overlay-{{ ai_gen_id }} {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, {{ block.settings.overlay_opacity_top }}),
+      rgba(0, 0, 0, {{ block.settings.overlay_opacity_bottom }})
+    );
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .ai-video-carousel__content-{{ ai_gen_id }} {
+    position: absolute;
+    bottom: {{ block.settings.content_bottom_offset }}px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: {{ block.settings.content_horizontal_alignment }};
+    padding: {{ block.settings.content_padding }}px;
+    z-index: 10;
+    text-align: {% if block.settings.content_horizontal_alignment == 'flex-start' %}left{% elsif block.settings.content_horizontal_alignment == 'flex-end' %}right{% else %}center{% endif %};
+  }
+
+  .ai-video-carousel__heading-{{ ai_gen_id }} {
+    color: {{ block.settings.text_color }};
+    font-size: {{ block.settings.heading_size }}px;
+    margin: 0 0 {{ block.settings.text_spacing }}px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    max-width: 800px;
+  }
+
+  .ai-video-carousel__subheading-{{ ai_gen_id }} {
+    color: {{ block.settings.text_color }};
+    font-size: {{ block.settings.subheading_size }}px;
+    margin: 0 0 {{ block.settings.button_spacing }}px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    max-width: 600px;
+  }
+
+  .ai-video-carousel__button-{{ ai_gen_id }} {
+    display: inline-block;
+    padding: calc({{ block.settings.button_padding_vertical }}px * 0.7) calc({{ block.settings.button_padding_horizontal }}px * 0.7);
+    background-color: {{ block.settings.button_background }};
+    color: {{ block.settings.button_text_color }};
+    text-decoration: none;
+    border-radius: {{ block.settings.button_border_radius }}px;
+    font-size: calc({{ block.settings.button_font_size }}px * 0.7);
+    font-weight: 400;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: none;
+    z-index: 15;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    opacity: 0.9;
+  }
+
+  .ai-video-carousel__button-{{ ai_gen_id }}:hover {
+    background-color: {{ block.settings.button_hover_background }};
+    color: {{ block.settings.button_hover_text_color }};
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    opacity: 1;
+  }
+
+  .ai-video-carousel__nav-{{ ai_gen_id }} {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: {{ block.settings.nav_button_background }};
+    color: {{ block.settings.nav_button_color }};
+    border: none;
+    width: {{ block.settings.nav_button_size }}px;
+    height: {{ block.settings.nav_button_size }}px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    opacity: 0.8;
+  }
+
+  .ai-video-carousel__nav-{{ ai_gen_id }}:hover {
+    background-color: {{ block.settings.nav_button_hover_background }};
+    transform: translateY(-50%) scale(1.05);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    opacity: 1;
+  }
+
+  .ai-video-carousel__nav--prev-{{ ai_gen_id }} {
+    left: {{ block.settings.nav_button_offset }}px;
+  }
+
+  .ai-video-carousel__nav--next-{{ ai_gen_id }} {
+    right: {{ block.settings.nav_button_offset }}px;
+  }
+
+  .ai-video-carousel__nav-{{ ai_gen_id }} svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ai-video-carousel__dots-{{ ai_gen_id }} {
+    position: absolute;
+    bottom: {{ block.settings.dots_offset }}px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 20;
+  }
+
+  .ai-video-carousel__dot-{{ ai_gen_id }} {
+    width: {{ block.settings.dot_size }}px;
+    height: {{ block.settings.dot_size }}px;
+    border-radius: 50%;
+    background-color: {{ block.settings.dot_color }};
+    opacity: 0.4;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+    padding: 0;
+  }
+
+  .ai-video-carousel__dot-{{ ai_gen_id }}.active {
+    opacity: 0.9;
+    transform: scale(1.1);
+  }
+
+  @media screen and (max-width: 749px) {
+    .ai-video-carousel__heading-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.heading_size }}px * 0.6);
+    }
+
+    .ai-video-carousel__subheading-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.subheading_size }}px * 0.8);
+    }
+
+    .ai-video-carousel__content-{{ ai_gen_id }} {
+      padding: {{ block.settings.content_padding | times: 0.5 }}px;
+      bottom: {{ block.settings.content_bottom_offset | times: 0.5 }}px;
+    }
+
+    .ai-video-carousel__button-{{ ai_gen_id }} {
+      font-size: calc({{ block.settings.button_font_size }}px * 0.6);
+    }
+
+    .ai-video-carousel__nav-{{ ai_gen_id }} {
+      width: calc({{ block.settings.nav_button_size }}px * 0.8);
+      height: calc({{ block.settings.nav_button_size }}px * 0.8);
+    }
+
+    .ai-video-carousel__nav--prev-{{ ai_gen_id }} {
+      left: calc({{ block.settings.nav_button_offset }}px * 0.5);
+    }
+
+    .ai-video-carousel__nav--next-{{ ai_gen_id }} {
+      right: calc({{ block.settings.nav_button_offset }}px * 0.5);
+    }
+  }
+{% endstyle %}
+
+<video-carousel-{{ ai_gen_id }} class="ai-video-carousel-{{ ai_gen_id }}" {{ block.shopify_attributes }}>
+  <div class="ai-video-carousel__container-{{ ai_gen_id }}">
+    <div class="ai-video-carousel__slides-{{ ai_gen_id }}">
+      {% for i in (1..3) %}
+        {% liquid
+          assign slide_enabled_key = 'slide_' | append: i | append: '_enabled'
+          assign video_key = 'slide_' | append: i | append: '_video'
+          assign heading_key = 'slide_' | append: i | append: '_heading'
+          assign subheading_key = 'slide_' | append: i | append: '_subheading'
+          assign button_text_key = 'slide_' | append: i | append: '_button_text'
+          assign button_link_key = 'slide_' | append: i | append: '_button_link'
+
+          assign slide_enabled = block.settings[slide_enabled_key]
+          assign video = block.settings[video_key]
+          assign heading = block.settings[heading_key]
+          assign subheading = block.settings[subheading_key]
+          assign button_text = block.settings[button_text_key]
+          assign button_link = block.settings[button_link_key]
+        %}
+
+        {% if slide_enabled %}
+          <div class="ai-video-carousel__slide-{{ ai_gen_id }}" data-slide="{{ i }}">
+            {% if video %}
+              <div class="ai-video-carousel__video-wrapper-{{ ai_gen_id }}">
+                <video
+                  class="ai-video-carousel__video-{{ ai_gen_id }}"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                >
+                  <source src="{{ video }}" type="video/mp4">
+                </video>
+              </div>
+            {% else %}
+              <div class="ai-video-carousel__video-wrapper-{{ ai_gen_id }}" style="background-color: #f4f4f4;">
+                <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666; font-size: 14px;">
+                  Add a video for slide {{ i }}
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="ai-video-carousel__overlay-{{ ai_gen_id }}"></div>
+
+            <div class="ai-video-carousel__content-{{ ai_gen_id }}">
+              {% if heading != blank %}
+                <h2 class="ai-video-carousel__heading-{{ ai_gen_id }}">{{ heading }}</h2>
+              {% endif %}
+
+              {% if subheading != blank %}
+                <p class="ai-video-carousel__subheading-{{ ai_gen_id }}">{{ subheading }}</p>
+              {% endif %}
+
+              {% if button_text != blank %}
+                <a
+                  href="{{ button_link }}"
+                  class="ai-video-carousel__button-{{ ai_gen_id }}"
+                >
+                  {{ button_text }}
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if block.settings.show_navigation %}
+      <button
+        class="ai-video-carousel__nav-{{ ai_gen_id }} ai-video-carousel__nav--prev-{{ ai_gen_id }}"
+        aria-label="Previous slide"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+
+      <button
+        class="ai-video-carousel__nav-{{ ai_gen_id }} ai-video-carousel__nav--next-{{ ai_gen_id }}"
+        aria-label="Next slide"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
+    {% endif %}
+
+    {% if block.settings.show_dots %}
+      <div class="ai-video-carousel__dots-{{ ai_gen_id }}">
+        {% for i in (1..3) %}
+          {% liquid
+            assign slide_enabled_key = 'slide_' | append: i | append: '_enabled'
+            assign slide_enabled = block.settings[slide_enabled_key]
+          %}
+          {% if slide_enabled %}
+            <button
+              class="ai-video-carousel__dot-{{ ai_gen_id }} {% if forloop.first %}active{% endif %}"
+              data-slide="{{ i }}"
+              aria-label="Go to slide {{ i }}"
+            ></button>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</video-carousel-{{ ai_gen_id }}>
+
+<script>
+  (function() {
+    class VideoCarousel{{ ai_gen_id }} extends HTMLElement {
+      constructor() {
+        super();
+        this.currentSlide = 0;
+        this.slides = [];
+        this.autoplayInterval = null;
+      }
+
+      connectedCallback() {
+        this.slidesContainer = this.querySelector('.ai-video-carousel__slides-{{ ai_gen_id }}');
+        this.slides = Array.from(this.querySelectorAll('.ai-video-carousel__slide-{{ ai_gen_id }}'));
+        this.dots = Array.from(this.querySelectorAll('.ai-video-carousel__dot-{{ ai_gen_id }}'));
+        this.prevButton = this.querySelector('.ai-video-carousel__nav--prev-{{ ai_gen_id }}');
+        this.nextButton = this.querySelector('.ai-video-carousel__nav--next-{{ ai_gen_id }}');
+
+        this.setupEventListeners();
+        this.startAutoplay();
+      }
+
+      setupEventListeners() {
+        if (this.prevButton) {
+          this.prevButton.addEventListener('click', () => this.goToPrevSlide());
+        }
+
+        if (this.nextButton) {
+          this.nextButton.addEventListener('click', () => this.goToNextSlide());
+        }
+
+        this.dots.forEach((dot, index) => {
+          dot.addEventListener('click', () => this.goToSlide(index));
+        });
+
+        this.addEventListener('mouseenter', () => this.stopAutoplay());
+        this.addEventListener('mouseleave', () => this.startAutoplay());
+      }
+
+      goToSlide(index) {
+        this.currentSlide = index;
+        this.updateSlidePosition();
+        this.updateDots();
+      }
+
+      goToNextSlide() {
+        this.currentSlide = (this.currentSlide + 1) % this.slides.length;
+        this.updateSlidePosition();
+        this.updateDots();
+      }
+
+      goToPrevSlide() {
+        this.currentSlide = (this.currentSlide - 1 + this.slides.length) % this.slides.length;
+        this.updateSlidePosition();
+        this.updateDots();
+      }
+
+      updateSlidePosition() {
+        const offset = -this.currentSlide * 100;
+        this.slidesContainer.style.transform = `translateX(${offset}%)`;
+      }
+
+      updateDots() {
+        this.dots.forEach((dot, index) => {
+          if (index === this.currentSlide) {
+            dot.classList.add('active');
+          } else {
+            dot.classList.remove('active');
+          }
+        });
+      }
+
+      startAutoplay() {
+        const autoplayEnabled = {{ block.settings.autoplay | json }};
+        const autoplaySpeed = {{ block.settings.autoplay_speed | times: 1000 }};
+
+        if (autoplayEnabled && this.slides.length > 1) {
+          this.autoplayInterval = setInterval(() => {
+            this.goToNextSlide();
+          }, autoplaySpeed);
+        }
+      }
+
+      stopAutoplay() {
+        if (this.autoplayInterval) {
+          clearInterval(this.autoplayInterval);
+          this.autoplayInterval = null;
+        }
+      }
+
+      disconnectedCallback() {
+        this.stopAutoplay();
+      }
+    }
+
+    customElements.define('video-carousel-{{ ai_gen_id }}', VideoCarousel{{ ai_gen_id }});
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Video carousel",
+  "tag": null,
+  "settings": [
+    {
+      "type": "header",
+      "content": "Layout"
+    },
+    {
+      "type": "range",
+      "id": "desktop_width_percent",
+      "label": "Desktop width",
+      "min": 50,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "default": 100
+    },
+    {
+      "type": "select",
+      "id": "aspect_ratio",
+      "label": "Aspect ratio",
+      "options": [
+        {
+          "value": "16/9",
+          "label": "16:9"
+        },
+        {
+          "value": "4/3",
+          "label": "4:3"
+        },
+        {
+          "value": "21/9",
+          "label": "21:9"
+        },
+        {
+          "value": "1/1",
+          "label": "Square"
+        }
+      ],
+      "default": "16/9"
+    },
+    {
+      "type": "header",
+      "content": "Content positioning"
+    },
+    {
+      "type": "select",
+      "id": "content_horizontal_alignment",
+      "label": "Horizontal alignment",
+      "options": [
+        {
+          "value": "flex-start",
+          "label": "Left"
+        },
+        {
+          "value": "center",
+          "label": "Center"
+        },
+        {
+          "value": "flex-end",
+          "label": "Right"
+        }
+      ],
+      "default": "center"
+    },
+    {
+      "type": "range",
+      "id": "content_padding",
+      "label": "Content padding",
+      "min": 20,
+      "max": 100,
+      "step": 10,
+      "unit": "px",
+      "default": 40
+    },
+    {
+      "type": "range",
+      "id": "content_bottom_offset",
+      "label": "Bottom offset",
+      "min": 20,
+      "max": 100,
+      "step": 10,
+      "unit": "px",
+      "default": 60
+    },
+    {
+      "type": "header",
+      "content": "Overlay"
+    },
+    {
+      "type": "range",
+      "id": "overlay_opacity_top",
+      "label": "Top opacity",
+      "min": 0,
+      "max": 1,
+      "step": 0.1,
+      "default": 0.2
+    },
+    {
+      "type": "range",
+      "id": "overlay_opacity_bottom",
+      "label": "Bottom opacity",
+      "min": 0,
+      "max": 1,
+      "step": 0.1,
+      "default": 0.3
+    },
+    {
+      "type": "header",
+      "content": "Text style"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "heading_size",
+      "label": "Heading size",
+      "min": 20,
+      "max": 80,
+      "step": 2,
+      "unit": "px",
+      "default": 48
+    },
+    {
+      "type": "range",
+      "id": "subheading_size",
+      "label": "Subheading size",
+      "min": 12,
+      "max": 32,
+      "step": 2,
+      "unit": "px",
+      "default": 18
+    },
+    {
+      "type": "range",
+      "id": "text_spacing",
+      "label": "Heading spacing",
+      "min": 8,
+      "max": 40,
+      "step": 4,
+      "unit": "px",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "button_spacing",
+      "label": "Button spacing",
+      "min": 16,
+      "max": 60,
+      "step": 4,
+      "unit": "px",
+      "default": 24
+    },
+    {
+      "type": "header",
+      "content": "Button style"
+    },
+    {
+      "type": "color",
+      "id": "button_background",
+      "label": "Background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Text color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "button_hover_background",
+      "label": "Hover background",
+      "default": "#f0f0f0"
+    },
+    {
+      "type": "color",
+      "id": "button_hover_text_color",
+      "label": "Hover text color",
+      "default": "#000000"
+    },
+    {
+      "type": "range",
+      "id": "button_padding_vertical",
+      "label": "Vertical padding",
+      "min": 6,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "default": 10
+    },
+    {
+      "type": "range",
+      "id": "button_padding_horizontal",
+      "label": "Horizontal padding",
+      "min": 16,
+      "max": 60,
+      "step": 4,
+      "unit": "px",
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "button_border_radius",
+      "label": "Border radius",
+      "min": 0,
+      "max": 50,
+      "step": 2,
+      "unit": "px",
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "button_font_size",
+      "label": "Font size",
+      "min": 11,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "default": 14
+    },
+    {
+      "type": "header",
+      "content": "Navigation"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_navigation",
+      "label": "Show arrows",
+      "default": true
+    },
+    {
+      "type": "color",
+      "id": "nav_button_background",
+      "label": "Arrow background",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "nav_button_color",
+      "label": "Arrow color",
+      "default": "#000000"
+    },
+    {
+      "type": "color",
+      "id": "nav_button_hover_background",
+      "label": "Arrow hover background",
+      "default": "#f0f0f0"
+    },
+    {
+      "type": "range",
+      "id": "nav_button_size",
+      "label": "Arrow size",
+      "min": 30,
+      "max": 70,
+      "step": 5,
+      "unit": "px",
+      "default": 40
+    },
+    {
+      "type": "range",
+      "id": "nav_button_offset",
+      "label": "Arrow offset",
+      "min": 10,
+      "max": 60,
+      "step": 5,
+      "unit": "px",
+      "default": 20
+    },
+    {
+      "type": "checkbox",
+      "id": "show_dots",
+      "label": "Show dots",
+      "default": true
+    },
+    {
+      "type": "color",
+      "id": "dot_color",
+      "label": "Dot color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "dot_size",
+      "label": "Dot size",
+      "min": 6,
+      "max": 16,
+      "step": 2,
+      "unit": "px",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "dots_offset",
+      "label": "Dots offset",
+      "min": 10,
+      "max": 60,
+      "step": 5,
+      "unit": "px",
+      "default": 20
+    },
+    {
+      "type": "header",
+      "content": "Autoplay"
+    },
+    {
+      "type": "checkbox",
+      "id": "autoplay",
+      "label": "Enable autoplay",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "autoplay_speed",
+      "label": "Autoplay speed",
+      "min": 3,
+      "max": 10,
+      "step": 1,
+      "unit": "s",
+      "default": 5
+    },
+    {
+      "type": "header",
+      "content": "Slide 1"
+    },
+    {
+      "type": "checkbox",
+      "id": "slide_1_enabled",
+      "label": "Enable slide 1",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "slide_1_video",
+      "label": "Video URL"
+    },
+    {
+      "type": "text",
+      "id": "slide_1_heading",
+      "label": "Heading",
+      "default": "Discover Our Collection"
+    },
+    {
+      "type": "textarea",
+      "id": "slide_1_subheading",
+      "label": "Subheading",
+      "default": "Explore premium jewelry crafted with precision"
+    },
+    {
+      "type": "text",
+      "id": "slide_1_button_text",
+      "label": "Button text",
+      "default": "Shop Now"
+    },
+    {
+      "type": "url",
+      "id": "slide_1_button_link",
+      "label": "Button link"
+    },
+    {
+      "type": "header",
+      "content": "Slide 2"
+    },
+    {
+      "type": "checkbox",
+      "id": "slide_2_enabled",
+      "label": "Enable slide 2",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "slide_2_video",
+      "label": "Video URL"
+    },
+    {
+      "type": "text",
+      "id": "slide_2_heading",
+      "label": "Heading",
+      "default": "Custom Designs"
+    },
+    {
+      "type": "textarea",
+      "id": "slide_2_subheading",
+      "label": "Subheading",
+      "default": "Made to order diamond jewelry"
+    },
+    {
+      "type": "text",
+      "id": "slide_2_button_text",
+      "label": "Button text",
+      "default": "Learn More"
+    },
+    {
+      "type": "url",
+      "id": "slide_2_button_link",
+      "label": "Button link"
+    },
+    {
+      "type": "header",
+      "content": "Slide 3"
+    },
+    {
+      "type": "checkbox",
+      "id": "slide_3_enabled",
+      "label": "Enable slide 3",
+      "default": true
+    },
+    {
+      "type": "url",
+      "id": "slide_3_video",
+      "label": "Video URL"
+    },
+    {
+      "type": "text",
+      "id": "slide_3_heading",
+      "label": "Heading",
+      "default": "Exquisite Craftsmanship"
+    },
+    {
+      "type": "textarea",
+      "id": "slide_3_subheading",
+      "label": "Subheading",
+      "default": "Every piece tells a story"
+    },
+    {
+      "type": "text",
+      "id": "slide_3_button_text",
+      "label": "Button text",
+      "default": "View Collection"
+    },
+    {
+      "type": "url",
+      "id": "slide_3_button_link",
+      "label": "Button link"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Video carousel"
+    }
+  ]
+}
+{% endschema %}
