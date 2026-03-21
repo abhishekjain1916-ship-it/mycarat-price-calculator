@@ -53,7 +53,14 @@ function lookupLogistics(subtotal, tiers) {
 // ─── Batch-fetch all rates + specs for given product IDs ───────────────────────
 // One call to fetchPreloaded replaces ~500-1000 individual DB queries per product.
 async function fetchPreloaded(productIds) {
-  const ids = Array.isArray(productIds) ? productIds : [productIds];
+  // null means "fetch all products" (bulk mode — avoids oversized URL in .in() filter)
+  const ids = productIds === null ? null : (Array.isArray(productIds) ? productIds : [productIds]);
+
+  // Build spec queries — filter by product_id in single-product mode, fetch all in bulk mode
+  const specQuery = (table, columns) => {
+    const q = supabase.from(table).select(columns).limit(10000);
+    return ids !== null ? q.in("product_id", ids) : q;
+  };
 
   const [
     metalRatesRes,
@@ -71,10 +78,10 @@ async function fetchPreloaded(productIds) {
     logisticsTiersRes,
   ] = await Promise.all([
     supabase.from("metal_rates").select("metal, rate_per_gram").order("fetched_at", { ascending: false }).limit(100),
-    supabase.from("product_specs_metal").select("product_id, purity, weight_grams").in("product_id", ids).limit(10000),
-    supabase.from("product_specs_diamonds").select("product_id, shape, size_bucket, total_weight_ct").in("product_id", ids).limit(10000),
-    supabase.from("product_specs_solitaires").select("product_id, weight_range, shape, actual_weight_ct").in("product_id", ids).limit(10000),
-    supabase.from("product_specs_gemstones").select("product_id, gemstone_name, size_bucket, actual_weight_ct").in("product_id", ids).limit(10000),
+    specQuery("product_specs_metal", "product_id, purity, weight_grams"),
+    specQuery("product_specs_diamonds", "product_id, shape, size_bucket, total_weight_ct"),
+    specQuery("product_specs_solitaires", "product_id, weight_range, shape, actual_weight_ct"),
+    specQuery("product_specs_gemstones", "product_id, gemstone_name, size_bucket, actual_weight_ct"),
     supabase.from("diamond_rates_round").select("diamond_type, colour_clarity, size_bucket, price_per_carat").limit(10000),
     supabase.from("diamond_rates_fancy").select("diamond_type, colour_clarity, size_bucket, shape, price_per_carat").limit(10000),
     supabase.from("solitaire_rates_core").select("diamond_type, colour, clarity, weight_range, price_per_carat").limit(10000),
@@ -572,6 +579,44 @@ export const action = async ({ request }) => {
 
   const body = await request.json();
   const { product_id, trigger } = body;
+
+  // ── Bulk mode: recalculate ALL products in one pass ──────────────────────
+  if (body.all) {
+    try {
+      const { data: metalSpecs, error: specErr } = await supabase
+        .from("product_specs_metal")
+        .select("product_id")
+        .limit(10000);
+
+      if (specErr) return json({ success: false, error: specErr.message });
+
+      const allIds = [...new Set((metalSpecs || []).map(r => r.product_id))];
+      if (allIds.length === 0) return json({ success: false, error: "No products found in product_specs_metal" });
+
+      const preloaded = await fetchPreloaded(null); // null = fetch all specs without filter
+
+      let totalDeltas = 0;
+      const results = [];
+      const warnings = [];
+
+      for (const pid of allIds) {
+        const { priceCache, deltas, cacheWarnings } = processProduct(pid, preloaded);
+        if (cacheWarnings.length > 0) warnings.push({ product_id: pid, warnings: cacheWarnings });
+        await writeProductResults(pid, priceCache, deltas);
+        results.push({ product_id: pid, deltas: deltas.length });
+        totalDeltas += deltas.length;
+      }
+
+      return json({
+        success: true,
+        products_processed: allIds.length,
+        total_deltas: totalDeltas,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      });
+    } catch (error) {
+      return json({ success: false, error: error.message });
+    }
+  }
 
   try {
     if (!product_id) return json({ success: false, error: "product_id is required" });
