@@ -140,7 +140,31 @@ CREATE POLICY "Users manage own wishlist"
 
 
 -- ──────────────────────────────────────────────
--- 5. Webhook helper function  (already in supabase_webhook_helpers.sql)
+-- 5. recalc_queue  (INF-07 — background price rebuild queue)
+-- ──────────────────────────────────────────────
+-- Written by the admin UI and daily cron; processed by recalc-worker.server.js
+CREATE TABLE IF NOT EXISTS public.recalc_queue (
+  id           UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
+  product_id   TEXT         NOT NULL,
+  status       TEXT         NOT NULL DEFAULT 'pending',
+    -- pending | processing | done | failed
+  priority     INTEGER      DEFAULT 0,
+    -- 0 = normal (daily cron / rate save), 1 = high (manual per-product)
+  attempted_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  error        TEXT,
+  created_at   TIMESTAMPTZ  DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS recalc_queue_status_priority_idx
+  ON public.recalc_queue (status, priority DESC, created_at ASC);
+
+-- No RLS needed — only accessed via service_role key from the app server
+-- Old done/failed rows can be pruned periodically; they are not user-facing
+
+
+-- ──────────────────────────────────────────────
+-- 6. Webhook helper function  (already in supabase_webhook_helpers.sql)
 --    Included here for completeness — safe to re-run.
 -- ──────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.get_user_id_by_email(p_email text)
