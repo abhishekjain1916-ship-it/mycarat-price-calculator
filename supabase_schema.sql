@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS public.shopify_orders (
   updated_at         TIMESTAMPTZ   DEFAULT now()
 );
 
+-- Add columns that may be missing if table already existed
+ALTER TABLE public.shopify_orders ADD COLUMN IF NOT EXISTS estimated_delivery DATE;
+ALTER TABLE public.shopify_orders ADD COLUMN IF NOT EXISTS tracking_number    TEXT;
+ALTER TABLE public.shopify_orders ADD COLUMN IF NOT EXISTS tracking_url       TEXT;
+ALTER TABLE public.shopify_orders ADD COLUMN IF NOT EXISTS carrier            TEXT;
+
 CREATE INDEX IF NOT EXISTS shopify_orders_user_id_idx
   ON public.shopify_orders (user_id);
 
@@ -90,6 +96,10 @@ CREATE TABLE IF NOT EXISTS public.goldback_transactions (
     -- MC-50: earned Goldback is locked for 30 days
   created_at  TIMESTAMPTZ  DEFAULT now()
 );
+
+-- Add unlocks_at if table already existed without it
+ALTER TABLE public.goldback_transactions
+  ADD COLUMN IF NOT EXISTS unlocks_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '30 days');
 
 CREATE INDEX IF NOT EXISTS goldback_txn_user_id_idx
   ON public.goldback_transactions (user_id);
