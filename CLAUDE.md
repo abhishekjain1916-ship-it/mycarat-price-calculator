@@ -13,7 +13,7 @@ A **Theme App Extension** (`extensions/price-calculator/blocks/price-calculator.
 
 **Price formula (Phase 1):** Sum of raw material costs only (metal + diamonds + solitaires + gemstones). Making charge, handling, discount, GST to be added in later phases.
 
-**Dev store:** `mycarat-dev.myshopify.com`
+**Live store:** `my-carat-exquisite-diamond-boutique.myshopify.com` (dev store retired — all work on live store only)
 
 ---
 
@@ -29,6 +29,7 @@ npm run setup          # prisma generate + prisma migrate deploy (first-time or 
 npm run lint           # ESLint
 npm run typecheck      # React Router typegen + tsc --noEmit
 shopify app deploy     # Deploy config and extensions to Shopify (required after liquid file changes)
+shopify theme push --store my-carat-exquisite-diamond-boutique --theme 149078835383  # Deploy theme to live store
 ```
 
 **Test cache recalculation:**
@@ -51,7 +52,7 @@ curl -X POST https://YOUR-TUNNEL-URL/api/recalculate-cache \
 | **SQLite via Prisma** (`prisma/schema.prisma`) | Shopify session storage only — one `Session` model |
 | **Supabase** (`app/supabase.server.js`) | All business data: rates, specs, price cache, delta cache |
 
-The Supabase client is in `app/supabase.server.js` with hardcoded URL and service-role key. All server routes import `{ supabase }` from there.
+The Supabase client is in `app/supabase.server.js` — reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from environment variables (`.env` locally, Fly.io secrets in production). Supabase now uses the `sb_secret_...` key format — legacy JWT keys (`eyJhbGci...`) are disabled. All server routes import `{ supabase }` from there.
 
 ### Supabase table reference
 
@@ -245,9 +246,65 @@ These are documented issues — understand them before making changes in related
 
 ---
 
+## GitHub Repos (public)
+
+| Repo | URL |
+|------|-----|
+| Shopify app (this repo) | `https://github.com/abhishekjain1916-ship-it/mycarat-price-calculator` |
+| Storefront theme | `https://github.com/abhishekjain1916-ship-it/mycarat-front-end` *(if published)* |
+
+Secrets are never committed — all in `.env` locally and Fly.io secrets in production.
+
+---
+
+## Session Log — 2026-03-21
+
+### What was done
+
+**Security audit & secret rotation**
+- Found hardcoded Supabase URL, service role key (`eyJhbGci...` JWT), and Shopify admin token (`shpat_...`) in 19 source files (12 `.cjs` scripts + `app/supabase.server.js`)
+- Moved all secrets to `.env` (gitignored); replaced every hardcoded value with `process.env.*`
+- Added `.claude/`, `*.cjs`, image folders, data files, and artefacts to `.gitignore`
+- Deleted entire git history (`rm -rf .git && git init`) to remove secrets from all past commits
+- Pushed clean initial commit to public GitHub repo
+
+**Supabase key migration**
+- Supabase auto-disabled legacy JWT keys on 2026-03-21
+- Migrated to new `sb_secret_...` format key
+- Updated both local `.env` and Fly.io secret (`SUPABASE_SERVICE_ROLE_KEY`)
+- Also added missing `SUPABASE_URL` Fly.io secret (was never set — caused all API calls to silently return "Price data not found")
+- Ran `flyctl deploy` to rebuild with updated `supabase.server.js` (old build had hardcoded key baked into bundle)
+
+**Infrastructure confirmed working**
+- `https://mycarat-price-calc.fly.dev/api/product-prices` returning full price + delta data ✓
+- `product_price_cache` has 464 rows ✓
+- Dev store retired; active store is `my-carat-exquisite-diamond-boutique.myshopify.com`
+- Active theme ID: `149078835383`
+
+### Current status
+
+| Area | Status |
+|------|--------|
+| Fly.io app | Live, healthy, Supabase connected |
+| Supabase | 464 products cached, new `sb_secret_` key active |
+| GitHub | Both repos public, secrets clean |
+| Theme | On live store, theme ID `149078835383` |
+| Dev store | Retired — `.shopify/` folder deleted |
+
+### Next tasks to pick up
+
+- [ ] Rotate Shopify admin token — `shpat_06d5716f...` was in old git history, needs regenerating in Shopify Admin → Settings → Apps. Update `.env` + `SHOPIFY_ACCESS_TOKEN` Fly.io secret
+- [ ] Add `RECALCULATE_SECRET` auth to `/api/recalculate-cache` — currently open to anyone
+- [ ] Add rate limiting to `/api/calculate-price`
+- [ ] Fix diamond type naming mismatch (`'Lab Grown'` vs `'Lab'`) — requires DB migration
+- [ ] Add "Recalculate All" button in admin UI to rebuild cache after daily metal rate changes
+- [ ] Consolidate duplicate `calculatePrice()` logic into shared `app/utils/calculatePrice.server.js`
+
+---
+
 ## Key Configuration Files
 
 - `shopify.app.toml` — App config, scopes (`write_metaobject_definitions`, `write_metaobjects`, `write_products`), webhook subscriptions
 - `app/shopify.server.js` — Shopify app init, `ApiVersion.October25`, expiring offline tokens enabled
-- `app/supabase.server.js` — Supabase client (hardcoded URL + service role key)
+- `app/supabase.server.js` — Supabase client (reads from `process.env.SUPABASE_URL` + `process.env.SUPABASE_SERVICE_ROLE_KEY`)
 - `.mcp.json` — Shopify Dev MCP configuration
