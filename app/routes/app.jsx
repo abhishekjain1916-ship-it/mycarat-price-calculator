@@ -25,6 +25,7 @@ export default function App() {
         <s-link href="/app/specs-diamonds">Specs — Diamonds</s-link>
         <s-link href="/app/specs-solitaires">Specs — Solitaires</s-link>
         <s-link href="/app/specs-gemstones">Specs — Gemstones</s-link>
+        <s-link href="/app/goldback-rates">Goldback Rates</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

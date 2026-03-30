@@ -5,9 +5,9 @@ import { invalidateCache } from "../utils/price-cache.server";
 // Default configurations
 const LAB_DEFAULTS = {
   metal_purity: "18KT",
-  diamond_colour_clarity: "EF VVS",
+  diamond_colour_clarity: "FG VS",
   solitaire_colour: "E",
-  solitaire_clarity: "VVS2",
+  solitaire_clarity: "VS1",
   solitaire_cut: "3EX",
   solitaire_fluorescence: "None",
   solitaire_certification: "IGI",
@@ -16,11 +16,11 @@ const LAB_DEFAULTS = {
 
 const NATURAL_DEFAULTS = {
   metal_purity: "18KT",
-  diamond_colour_clarity: "FG VS",
+  diamond_colour_clarity: "GH VS",
   solitaire_colour: "H",
   solitaire_clarity: "VS2",
-  solitaire_cut: "3VG+",
-  solitaire_fluorescence: "Faint",
+  solitaire_cut: "3EX",
+  solitaire_fluorescence: "None",
   solitaire_certification: "IGI",
   gemstone_quality: "Premium",
 };
@@ -28,14 +28,17 @@ const NATURAL_DEFAULTS = {
 // All options per component
 const OPTIONS = {
   diamond_lab: ["EF VVS", "EF VS", "FG VS"],
-  diamond_natural: ["EF VVS", "EF VS", "FG VVS", "FG VS", "GH VS", "GH SI"],
-  solitaire_colour_lab: ["D", "E", "F"],
-  solitaire_colour_natural: ["E", "F", "G", "H", "I", "J"],
-  solitaire_clarity_lab: ["FL", "IF", "VVS1", "VVS2", "VS1", "VS2"],
-  solitaire_clarity_natural: ["VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2"],
-  solitaire_cut_natural: ["3EX", "3VG+", "Others"],
-  solitaire_fluorescence_natural: ["None", "Faint", "Others"],
-  solitaire_certification_natural: ["IGI", "GIA", "Others"],
+  diamond_natural: ["EF VVS", "EF VS", "FG VVS", "FG VS", "GH VS"],
+  // Lab solitaire: default E VS1; upgrades colour D, clarity VVS2/VVS1/IF
+  solitaire_colour_lab: ["D", "E"],
+  solitaire_clarity_lab: ["IF", "VVS1", "VVS2", "VS1"],
+  // Natural solitaire: default H VS2; upgrades colour D/E/F/G, clarity VS1/VVS2/VVS1
+  solitaire_colour_natural: ["E", "F", "G", "H"],
+  solitaire_clarity_natural: ["VVS1", "VVS2", "VS1", "VS2"],
+  // Cut/fluor/cert fixed for both — only the fixed values below are ever used
+  solitaire_cut: "3EX",
+  solitaire_fluorescence: "None",
+  solitaire_certification: "IGI",
   gemstone_lab: ["Classic", "Premium", "Synthetic"],
   gemstone_natural: ["Classic", "Premium", "World Class", "Heirloom", "Royalty"],
 };
@@ -48,6 +51,21 @@ function lookupLogistics(subtotal, tiers) {
       (t.max_value == null || subtotal < parseFloat(t.max_value))
   );
   return tier ? parseFloat(tier.logistics_charge) : 0;
+}
+
+// ─── Paginate a Supabase table query that may exceed the 1000-row server cap ──
+async function fetchAllRows(query) {
+  const PAGE = 1000;
+  let offset = 0;
+  let all = [];
+  while (true) {
+    const { data, error } = await query.range(offset, offset + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
 }
 
 // ─── Batch-fetch all rates + specs for given product IDs ───────────────────────
@@ -70,7 +88,7 @@ async function fetchPreloaded(productIds) {
     gemstoneSpecsRes,
     diamondRatesRoundRes,
     diamondRatesFancyRes,
-    solitaireRatesRes,
+    solitaireRatesData,
     solitaireModsRes,
     gemstoneNaturalRatesRes,
     gemstoneSynthRatesRes,
@@ -84,13 +102,17 @@ async function fetchPreloaded(productIds) {
     specQuery("product_specs_gemstones", "product_id, gemstone_name, size_bucket, actual_weight_ct"),
     supabase.from("diamond_rates_round").select("diamond_type, colour_clarity, size_bucket, price_per_carat").limit(10000),
     supabase.from("diamond_rates_fancy").select("diamond_type, colour_clarity, size_bucket, shape, price_per_carat").limit(10000),
-    supabase.from("solitaire_rates_core").select("diamond_type, colour, clarity, weight_range, price_per_carat").limit(10000),
+    // solitaire_rates_core exceeds the 1000-row server cap — paginate to fetch all rows
+    fetchAllRows(supabase.from("solitaire_rates_core").select("diamond_type, colour, clarity, weight_range, price_per_carat")),
     supabase.from("solitaire_modifiers").select("modifier_type, modifier_value, modifier_pct").limit(1000),
     supabase.from("gemstone_rates_natural").select("gemstone_name, size_bucket, quality, price_per_carat").limit(10000),
     supabase.from("gemstone_rates_synth_lab").select("gemstone_name, size_bucket, quality, price_per_carat").limit(10000),
     supabase.from("making_charge_rates").select("*").eq("id", 1).single(),
     supabase.from("logistics_tiers").select("*").order("min_value", { ascending: true }).limit(100),
   ]);
+
+  // fetchAllRows returns the array directly (not a {data} wrapper)
+  const solitaireRatesRes = { data: solitaireRatesData };
 
   // Latest metal rate per type (rates are ordered newest-first, take first seen)
   const metalRatesMap = {};
@@ -217,6 +239,7 @@ function calculatePrice(product_id, params, preloaded) {
   } = preloaded;
 
   let total = 0;
+  let stoneTotal = 0;  // diamond + solitaire + gemstone only (for Goldback)
   let metalMaterialCost = 0;
   let metalIsGold = false;
   const misses = [];
@@ -254,7 +277,9 @@ function calculatePrice(product_id, params, preloaded) {
         : diamondRatesFancyMap[`${dtKey}|${diamond_colour_clarity}|${spec.size_bucket}|${spec.shape}`];
 
       if (ppc != null) {
-        total += parseFloat(spec.total_weight_ct) * ppc;
+        const amt = parseFloat(spec.total_weight_ct) * ppc;
+        total += amt;
+        stoneTotal += amt;
       } else {
         misses.push(`diamond rate missing: ${diamond_type} ${diamond_colour_clarity} ${spec.size_bucket} shape=${spec.shape}`);
       }
@@ -274,7 +299,9 @@ function calculatePrice(product_id, params, preloaded) {
       const fluorMod  = solitaire_fluorescence ? (solitaireModsMap[`fluorescence|${solitaire_fluorescence}`] || 0) : 0;
       const certMod   = solitaire_certification ? (solitaireModsMap[`certification|${solitaire_certification}`] || 0) : 0;
       const cutMod    = solitaire_cut ? (solitaireModsMap[`cut_pol_sym|${solitaire_cut}`] || 0) : 0;
-      total += parseFloat(spec.actual_weight_ct) * ppc * (1 + shapeMod) * (1 + fluorMod) * (1 + certMod) * (1 + cutMod);
+      const solAmt = parseFloat(spec.actual_weight_ct) * ppc * (1 + shapeMod) * (1 + fluorMod) * (1 + certMod) * (1 + cutMod);
+      total += solAmt;
+      stoneTotal += solAmt;
     }
   }
 
@@ -287,7 +314,9 @@ function calculatePrice(product_id, params, preloaded) {
         : gemstoneSynthRatesMap[`${spec.gemstone_name}|${spec.size_bucket}|${gemstone_quality}`];
 
       if (ppc != null) {
-        total += parseFloat(spec.actual_weight_ct) * ppc;
+        const gemAmt = parseFloat(spec.actual_weight_ct) * ppc;
+        total += gemAmt;
+        stoneTotal += gemAmt;
       } else {
         misses.push(`gemstone rate missing: ${gemstone_type} ${spec.gemstone_name} ${spec.size_bucket} quality=${gemstone_quality}`);
       }
@@ -326,7 +355,7 @@ function calculatePrice(product_id, params, preloaded) {
   const gstMaking    = 0.05 * making;
 
   const price = Math.round(materialTotal + making + gstMaterials + gstMaking);
-  return { price, misses, preLogisticsSub };
+  return { price, misses, preLogisticsSub, stoneValue: Math.round(stoneTotal) };
 }
 
 // ─── Process a single product using pre-fetched data ─────────────────────────
@@ -373,8 +402,8 @@ function processProduct(product_id, preloaded) {
   };
 
   // Default prices
-  const { price: labDefault,     misses: m1, preLogisticsSub: labPreLogSub } = calculatePrice(product_id, labParams,     preloaded);
-  const { price: naturalDefault, misses: m2, preLogisticsSub: natPreLogSub } = calculatePrice(product_id, naturalParams, preloaded);
+  const { price: labDefault,     misses: m1, preLogisticsSub: labPreLogSub, stoneValue: labStoneValue     } = calculatePrice(product_id, labParams,     preloaded);
+  const { price: naturalDefault, misses: m2, preLogisticsSub: natPreLogSub, stoneValue: naturalStoneValue } = calculatePrice(product_id, naturalParams, preloaded);
 
   // Find cheapest/priciest solitaire combination (in-memory, zero DB queries)
   let cheapestLabSolCombo    = null;
@@ -410,26 +439,20 @@ function processProduct(product_id, preloaded) {
       }
     }
 
-    // Natural: all 972 combinations
+    // Natural: colour × clarity (fixed 3EX/None/IGI) — 5×4 = 20 combinations
     let minNat = Infinity, maxNat = -Infinity;
     for (const colour of OPTIONS.solitaire_colour_natural) {
       for (const clarity of OPTIONS.solitaire_clarity_natural) {
-        for (const cut of OPTIONS.solitaire_cut_natural) {
-          for (const fluor of OPTIONS.solitaire_fluorescence_natural) {
-            for (const cert of OPTIONS.solitaire_certification_natural) {
-              const cost = computeSolMaterial("Natural", colour, clarity, cut, fluor, cert);
-              if (cost < minNat) { minNat = cost; cheapestNatSolCombo  = { solitaire_colour: colour, solitaire_clarity: clarity, solitaire_cut: cut, solitaire_fluorescence: fluor, solitaire_certification: cert }; }
-              if (cost > maxNat) { maxNat = cost; priesiestNatSolCombo = { solitaire_colour: colour, solitaire_clarity: clarity, solitaire_cut: cut, solitaire_fluorescence: fluor, solitaire_certification: cert }; }
-            }
-          }
-        }
+        const cost = computeSolMaterial("Natural", colour, clarity, NATURAL_DEFAULTS.solitaire_cut, NATURAL_DEFAULTS.solitaire_fluorescence, NATURAL_DEFAULTS.solitaire_certification);
+        if (cost < minNat) { minNat = cost; cheapestNatSolCombo  = { solitaire_colour: colour, solitaire_clarity: clarity }; }
+        if (cost > maxNat) { maxNat = cost; priesiestNatSolCombo = { solitaire_colour: colour, solitaire_clarity: clarity }; }
       }
     }
   }
 
   // Min prices
   const { price: labMin,     misses: m3 } = calculatePrice(product_id, { ...labParams,     metal_purity: cheapestPurity, diamond_colour_clarity: productHasDiamonds ? "FG VS" : null,  ...(productHasSolitaires && cheapestLabSolCombo   ? cheapestLabSolCombo   : {}), gemstone_quality: productHasGemstones ? "Classic" : null }, preloaded);
-  const { price: naturalMin, misses: m4 } = calculatePrice(product_id, { ...naturalParams, metal_purity: cheapestPurity, diamond_colour_clarity: productHasDiamonds ? "GH SI" : null,  ...(productHasSolitaires && cheapestNatSolCombo   ? cheapestNatSolCombo   : {}), gemstone_quality: productHasGemstones ? "Classic" : null }, preloaded);
+  const { price: naturalMin, misses: m4 } = calculatePrice(product_id, { ...naturalParams, metal_purity: cheapestPurity, diamond_colour_clarity: productHasDiamonds ? "GH VS" : null,  ...(productHasSolitaires && cheapestNatSolCombo   ? cheapestNatSolCombo   : {}), gemstone_quality: productHasGemstones ? "Classic" : null }, preloaded);
 
   // Max prices
   const { price: labMax,     misses: m5 } = calculatePrice(product_id, { ...labParams,     metal_purity: "18KT", diamond_colour_clarity: productHasDiamonds ? "EF VVS" : null, ...(productHasSolitaires && priesiestLabSolCombo ? priesiestLabSolCombo : {}), gemstone_quality: productHasGemstones ? "Premium" : null }, preloaded);
@@ -462,13 +485,10 @@ function processProduct(product_id, preloaded) {
 
   // Solitaire individual deltas
   if (productHasSolitaires) {
-    for (const option of OPTIONS.solitaire_colour_lab)           deltas.push(calcDelta("Lab",     "solitaire_colour",        option, { solitaire_colour:        option }));
-    for (const option of OPTIONS.solitaire_colour_natural)       deltas.push(calcDelta("Natural", "solitaire_colour",        option, { solitaire_colour:        option }));
-    for (const option of OPTIONS.solitaire_clarity_lab)          deltas.push(calcDelta("Lab",     "solitaire_clarity",       option, { solitaire_clarity:       option }));
-    for (const option of OPTIONS.solitaire_clarity_natural)      deltas.push(calcDelta("Natural", "solitaire_clarity",       option, { solitaire_clarity:       option }));
-    for (const option of OPTIONS.solitaire_cut_natural)          deltas.push(calcDelta("Natural", "solitaire_cut",           option, { solitaire_cut:           option }));
-    for (const option of OPTIONS.solitaire_fluorescence_natural) deltas.push(calcDelta("Natural", "solitaire_fluorescence",  option, { solitaire_fluorescence:  option }));
-    for (const option of OPTIONS.solitaire_certification_natural)deltas.push(calcDelta("Natural", "solitaire_certification", option, { solitaire_certification: option }));
+    for (const option of OPTIONS.solitaire_colour_lab)           deltas.push(calcDelta("Lab",     "solitaire_colour",  option, { solitaire_colour:  option }));
+    for (const option of OPTIONS.solitaire_colour_natural)       deltas.push(calcDelta("Natural", "solitaire_colour",  option, { solitaire_colour:  option }));
+    for (const option of OPTIONS.solitaire_clarity_lab)          deltas.push(calcDelta("Lab",     "solitaire_clarity", option, { solitaire_clarity: option }));
+    for (const option of OPTIONS.solitaire_clarity_natural)      deltas.push(calcDelta("Natural", "solitaire_clarity", option, { solitaire_clarity: option }));
   }
 
   // Gemstone deltas
@@ -495,11 +515,15 @@ function processProduct(product_id, preloaded) {
       return t;
     };
 
-    // Lab: 18 combinations
-    const labSolDefault = computeSolMat("Lab", LAB_DEFAULTS.solitaire_colour, LAB_DEFAULTS.solitaire_clarity, LAB_DEFAULTS.solitaire_cut, LAB_DEFAULTS.solitaire_fluorescence, LAB_DEFAULTS.solitaire_certification);
+    const CUT  = OPTIONS.solitaire_cut;
+    const FLUOR = OPTIONS.solitaire_fluorescence;
+    const CERT  = OPTIONS.solitaire_certification;
+
+    // Lab: colour × clarity (fixed 3EX/None/IGI) — 2×4 = 8 combinations
+    const labSolDefault = computeSolMat("Lab", LAB_DEFAULTS.solitaire_colour, LAB_DEFAULTS.solitaire_clarity, CUT, FLUOR, CERT);
     for (const colour of OPTIONS.solitaire_colour_lab) {
       for (const clarity of OPTIONS.solitaire_clarity_lab) {
-        const solNew = computeSolMat("Lab", colour, clarity, LAB_DEFAULTS.solitaire_cut, LAB_DEFAULTS.solitaire_fluorescence, LAB_DEFAULTS.solitaire_certification);
+        const solNew = computeSolMat("Lab", colour, clarity, CUT, FLUOR, CERT);
         const deltaS = solNew - labSolDefault;
         const newPreLog = labPreLogSub + 1.03 * deltaS;
         const deltaLogistics = lookupLogistics(newPreLog, tiers) - lookupLogistics(labPreLogSub, tiers);
@@ -507,21 +531,15 @@ function processProduct(product_id, preloaded) {
       }
     }
 
-    // Natural: 972 combinations
-    const natSolDefault = computeSolMat("Natural", NATURAL_DEFAULTS.solitaire_colour, NATURAL_DEFAULTS.solitaire_clarity, NATURAL_DEFAULTS.solitaire_cut, NATURAL_DEFAULTS.solitaire_fluorescence, NATURAL_DEFAULTS.solitaire_certification);
+    // Natural: colour × clarity (fixed 3EX/None/IGI) — 5×4 = 20 combinations
+    const natSolDefault = computeSolMat("Natural", NATURAL_DEFAULTS.solitaire_colour, NATURAL_DEFAULTS.solitaire_clarity, CUT, FLUOR, CERT);
     for (const colour of OPTIONS.solitaire_colour_natural) {
       for (const clarity of OPTIONS.solitaire_clarity_natural) {
-        for (const cut of OPTIONS.solitaire_cut_natural) {
-          for (const fluor of OPTIONS.solitaire_fluorescence_natural) {
-            for (const cert of OPTIONS.solitaire_certification_natural) {
-              const solNew = computeSolMat("Natural", colour, clarity, cut, fluor, cert);
-              const deltaS = solNew - natSolDefault;
-              const newPreLog = natPreLogSub + 1.03 * deltaS;
-              const deltaLogistics = lookupLogistics(newPreLog, tiers) - lookupLogistics(natPreLogSub, tiers);
-              deltas.push({ product_id, diamond_type: "Natural", component: "solitaire_combined", option_value: `${colour}_${clarity}_${cut}_${fluor}_${cert}`, delta_amount: Math.round(1.03 * deltaS + 1.05 * deltaLogistics), last_calculated_at: new Date().toISOString() });
-            }
-          }
-        }
+        const solNew = computeSolMat("Natural", colour, clarity, CUT, FLUOR, CERT);
+        const deltaS = solNew - natSolDefault;
+        const newPreLog = natPreLogSub + 1.03 * deltaS;
+        const deltaLogistics = lookupLogistics(newPreLog, tiers) - lookupLogistics(natPreLogSub, tiers);
+        deltas.push({ product_id, diamond_type: "Natural", component: "solitaire_combined", option_value: `${colour}_${clarity}`, delta_amount: Math.round(1.03 * deltaS + 1.05 * deltaLogistics), last_calculated_at: new Date().toISOString() });
       }
     }
   }
@@ -532,9 +550,11 @@ function processProduct(product_id, preloaded) {
       lab_default_price: labDefault,
       lab_min_price: labMin,
       lab_max_price: labMax,
+      lab_stone_value: labStoneValue,
       natural_default_price: naturalDefault,
       natural_min_price: naturalMin,
       natural_max_price: naturalMax,
+      natural_stone_value: naturalStoneValue,
       last_calculated_at: new Date().toISOString(),
     },
     deltas,

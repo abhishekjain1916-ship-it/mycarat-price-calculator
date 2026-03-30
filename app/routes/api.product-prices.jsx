@@ -18,7 +18,10 @@ export const loader = async ({ request }) => {
   }
 
   const url = new URL(request.url);
-  const product_id = url.searchParams.get("product_id");
+  const product_id    = url.searchParams.get("product_id");
+  const product_type  = (url.searchParams.get("product_type")  || "").toLowerCase().trim();
+  const product_handle = (url.searchParams.get("product_handle") || "").toLowerCase().trim();
+  const collections   = (url.searchParams.get("collections")   || "").toLowerCase().trim();
 
   if (!product_id) {
     return new Response(JSON.stringify({ error: "product_id is required" }), {
@@ -39,11 +42,15 @@ export const loader = async ({ request }) => {
     });
   }
 
-  const { data: priceCache } = await supabase
-    .from("product_price_cache")
-    .select("*")
-    .eq("product_id", product_id)
-    .single();
+  const [
+    { data: priceCache },
+    { data: goldRateRow },
+    { data: goldbackRates },
+  ] = await Promise.all([
+    supabase.from("product_price_cache").select("*").eq("product_id", product_id).single(),
+    supabase.from("metal_rates").select("rate_per_gram").eq("metal", "gold").order("fetched_at", { ascending: false }).limit(1).single(),
+    supabase.from("goldback_rates").select("scope, scope_value, rate_percent").order("created_at", { ascending: true }),
+  ]);
 
   if (!priceCache) {
     return new Response(JSON.stringify({ error: "Price data not found" }), {
@@ -69,19 +76,37 @@ export const loader = async ({ request }) => {
   }
   const deltas = allDeltas;
 
+  // Resolve goldback rate: product > product_type > collection > default
+  const rates = goldbackRates || [];
+  const defaultRate = parseFloat((rates.find(r => r.scope === "default") || {}).rate_percent || 2);
+  const collectionHandles = collections ? collections.split(",").map(s => s.trim()) : [];
+  const collectionRate = rates.filter(r => r.scope === "collection" && collectionHandles.includes(r.scope_value))
+    .reduce((best, r) => Math.max(best, parseFloat(r.rate_percent)), 0);
+  const typeRate    = parseFloat((rates.find(r => r.scope === "product_type" && r.scope_value === product_type) || {}).rate_percent || 0);
+  const productRate = parseFloat((rates.find(r => r.scope === "product"      && r.scope_value === product_handle) || {}).rate_percent || 0);
+  const goldbackRate = productRate || typeRate || collectionRate || defaultRate;
+
+  const goldRatePerGram = goldRateRow ? parseFloat(goldRateRow.rate_per_gram) : 0;
+
   const responseData = {
     success: true,
     prices: {
       lab: {
-        default: parseFloat(priceCache.lab_default_price),
-        min: parseFloat(priceCache.lab_min_price),
-        max: parseFloat(priceCache.lab_max_price),
+        default:     parseFloat(priceCache.lab_default_price),
+        min:         parseFloat(priceCache.lab_min_price),
+        max:         parseFloat(priceCache.lab_max_price),
+        stone_value: parseFloat(priceCache.lab_stone_value || 0),
       },
       natural: {
-        default: parseFloat(priceCache.natural_default_price),
-        min: parseFloat(priceCache.natural_min_price),
-        max: parseFloat(priceCache.natural_max_price),
+        default:     parseFloat(priceCache.natural_default_price),
+        min:         parseFloat(priceCache.natural_min_price),
+        max:         parseFloat(priceCache.natural_max_price),
+        stone_value: parseFloat(priceCache.natural_stone_value || 0),
       },
+    },
+    goldback: {
+      rate_percent:     goldbackRate,
+      gold_rate_per_gram: goldRatePerGram,
     },
     deltas: deltas || [],
   };

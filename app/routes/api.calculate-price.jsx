@@ -48,6 +48,8 @@ export const action = async ({ request }) => {
   const metalType = metal_purity
     ? metal_purity.includes("KT") ? "gold" : "silver"
     : null;
+  // diamond_rates tables store "Lab Grown" not "Lab"
+  const diamondTypeKey = diamond_type === "Lab" ? "Lab Grown" : diamond_type;
   const hasDiamonds = !!(diamond_type && diamond_colour_clarity);
   const hasSolitaires = !!(solitaire_type && solitaire_colour && solitaire_clarity);
   const hasGemstones = !!(gemstone_type && gemstone_quality);
@@ -85,10 +87,10 @@ export const action = async ({ request }) => {
       ? supabase.from("product_specs_gemstones").select("*").eq("product_id", product_id)
       : Promise.resolve({ data: [] }),
     hasDiamonds
-      ? supabase.from("diamond_rates_round").select("size_bucket, price_per_carat").eq("diamond_type", diamond_type).eq("colour_clarity", diamond_colour_clarity)
+      ? supabase.from("diamond_rates_round").select("size_bucket, price_per_carat").eq("diamond_type", diamondTypeKey).eq("colour_clarity", diamond_colour_clarity)
       : Promise.resolve({ data: [] }),
     hasDiamonds
-      ? supabase.from("diamond_rates_fancy").select("shape, size_bucket, price_per_carat").eq("diamond_type", diamond_type).eq("colour_clarity", diamond_colour_clarity)
+      ? supabase.from("diamond_rates_fancy").select("shape, size_bucket, price_per_carat").eq("diamond_type", diamondTypeKey).eq("colour_clarity", diamond_colour_clarity)
       : Promise.resolve({ data: [] }),
     hasSolitaires
       ? supabase.from("solitaire_rates_core").select("weight_range, price_per_carat").eq("diamond_type", solitaire_type).eq("colour", solitaire_colour).eq("clarity", solitaire_clarity)
@@ -174,7 +176,7 @@ export const action = async ({ request }) => {
           : fancyRatesMap.get(`${spec.shape}|${spec.size_bucket}`);
 
         if (ppc == null) {
-          errors.push(`Diamond rate not found for ${spec.diamond_group_ref} (${spec.shape}, ${spec.size_bucket}, ${diamond_type}, ${diamond_colour_clarity}).`);
+          errors.push(`Diamond rate not found for ${spec.diamond_group_ref} (${spec.shape}, ${spec.size_bucket}, ${diamondTypeKey}, ${diamond_colour_clarity}).`);
           continue;
         }
 

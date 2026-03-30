@@ -7,9 +7,81 @@
 --   MC-47  wishlists
 --   MC-49  shopify_orders (order sync from Shopify webhook)
 --   MC-50  goldback accrual (unlocks_at, handled in webhook)
+--   MC-48  bespoke_leads (bespoke capture funnel)
 --
 -- Run this entire file once. Safe to re-run — uses IF NOT EXISTS.
 -- ============================================================
+
+
+-- ──────────────────────────────────────────────
+-- 0. bespoke_leads  (MC-48)
+-- ──────────────────────────────────────────────
+-- Storage bucket: create manually in Supabase dashboard
+--   Storage > New bucket > Name: bespoke-uploads > Public: false
+--   Then add policy: allow insert for all (anon + authenticated)
+
+CREATE TABLE IF NOT EXISTS public.bespoke_leads (
+  id                  UUID          DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at          TIMESTAMPTZ   DEFAULT now() NOT NULL,
+
+  -- Which path the user chose
+  path                TEXT          NOT NULL,
+    -- 'this_product' | 'another_product' | 'something_else'
+
+  -- This product path
+  product_handle      TEXT,
+  product_title       TEXT,
+  product_url         TEXT,
+  product_image_url   TEXT,
+
+  -- Another mycarat product path (URL or name — one field, user enters either)
+  reference_input     TEXT,
+
+  -- Something else path
+  reference_url       TEXT,         -- external URL pasted by user
+  reference_image_url TEXT,         -- Supabase Storage path after upload
+
+  -- Notes (optional, all paths)
+  bespoke_notes       TEXT,
+
+  -- Contact (compulsory)
+  contact_name        TEXT          NOT NULL,
+  contact_phone       TEXT          NOT NULL,
+  contact_email       TEXT          NOT NULL,
+
+  -- Preferred time to connect
+  preferred_day       TEXT,         -- 'Today' | 'Tomorrow' | 'This week' | 'Weekend'
+  preferred_time      TEXT,         -- 'Morning (9–12)' | 'Afternoon (12–5)' | 'Evening (5–8)'
+
+  -- Auth — auto-captured if logged in
+  customer_id         TEXT,         -- Shopify customer ID
+  customer_email      TEXT,         -- from session
+
+  -- Source
+  source_page         TEXT,         -- URL of page where funnel was triggered
+
+  -- Admin
+  status              TEXT          NOT NULL DEFAULT 'new'
+    -- 'new' | 'contacted' | 'in_progress' | 'closed'
+);
+
+-- RLS: service_role writes (via API route); authenticated users can read their own rows
+ALTER TABLE public.bespoke_leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role full access on bespoke_leads" ON public.bespoke_leads;
+CREATE POLICY "service_role full access on bespoke_leads"
+  ON public.bespoke_leads
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "users read own bespoke leads" ON public.bespoke_leads;
+CREATE POLICY "users read own bespoke leads"
+  ON public.bespoke_leads
+  FOR SELECT
+  TO authenticated
+  USING (customer_email = auth.jwt() ->> 'email');
 
 
 -- ──────────────────────────────────────────────
