@@ -40,7 +40,8 @@ database.sqlite
 extracted_specs/
 *.csv
 *.xlsx
-*.sql
+# Note: *.sql excluded below but supabase/ folder is explicitly tracked
+/prisma/*.sql
 media_upload_log.json
 specs_upload_log.json
 shopify_id_map.json
