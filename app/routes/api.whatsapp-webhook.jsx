@@ -1,5 +1,6 @@
 /**
  * WhatsApp Business API — Webhook
+ * Last updated: 2026-04-11
  *
  * GET  /api/whatsapp-webhook  — Meta verification handshake
  * POST /api/whatsapp-webhook  — Incoming messages + status updates
