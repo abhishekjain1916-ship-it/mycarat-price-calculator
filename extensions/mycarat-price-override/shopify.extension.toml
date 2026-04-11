@@ -1,0 +1,16 @@
+api_version = "2026-04"
+
+[[extensions]]
+uid = "7bbe1ec9-19d0-3cd2-5a6a-8caee5f44afd11779b10"
+type = "function"
+name = "MyCarat Price Override"
+handle = "mycarat-price-override"
+
+[extensions.build]
+command = "bash build.sh"
+path = "dist/index.wasm"
+watch_paths = ["src/**.js"]
+
+[[extensions.targeting]]
+module = "./src/run.js"
+target = "purchase.cart-transform.run"

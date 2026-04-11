@@ -1,0 +1,207 @@
+{
+  "version": "6.1",
+  "routing_model": {
+    "CATEGORY":      ["BUDGET"],
+    "BUDGET":        ["DIAMOND_STYLE"],
+    "DIAMOND_STYLE": ["FINAL"],
+    "FINAL":         []
+  },
+  "screens": [
+
+    {
+      "id": "CATEGORY",
+      "title": "Find Your Perfect Piece",
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "Welcome! We'd love to help you find something special 🌟"
+          },
+          {
+            "type": "TextBody",
+            "text": "What are you shopping for?"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "category",
+            "label": "Choose a category",
+            "required": true,
+            "data-source": [
+              { "id": "rings",     "title": "💍 Rings" },
+              { "id": "earrings",  "title": "✨ Earrings" },
+              { "id": "pendants",  "title": "📿 Pendants" },
+              { "id": "bracelets", "title": "🌸 Bracelets" },
+              { "id": "surprise",  "title": "🎁 Surprise me" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Next",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "BUDGET" },
+              "payload": {
+                "category": "${form.category}"
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "BUDGET",
+      "title": "Your Budget",
+      "data": {
+        "category": { "type": "string", "__example__": "rings" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "We have something for every budget 💛"
+          },
+          {
+            "type": "TextBody",
+            "text": "Do you have a range in mind? (optional)"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "budget",
+            "label": "Select a range",
+            "required": false,
+            "data-source": [
+              { "id": "under-25k", "title": "Under ₹25K" },
+              { "id": "25k-1l",    "title": "₹25K – ₹1L" },
+              { "id": "1l-5l",     "title": "₹1L – ₹5L" },
+              { "id": "above-5l",  "title": "Above ₹5L" },
+              { "id": "skip",      "title": "I'd rather not say" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Next",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "DIAMOND_STYLE" },
+              "payload": {
+                "category": "${data.category}",
+                "budget":   "${form.budget}"
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "DIAMOND_STYLE",
+      "title": "Diamond Style",
+      "data": {
+        "category": { "type": "string", "__example__": "rings" },
+        "budget":   { "type": "string", "__example__": "1l-5l" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "Do you love a solitaire diamond as the star of the piece? 💎"
+          },
+          {
+            "type": "TextBody",
+            "text": "Solitaires are larger, statement diamonds — typically 3mm or more — that take centre stage in a piece."
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "diamond_style",
+            "label": "Your preference (optional)",
+            "required": false,
+            "data-source": [
+              { "id": "solitaire",     "title": "✨ Yes, give me that wow factor" },
+              { "id": "spread",        "title": "🌟 Diamonds all around for me" },
+              { "id": "no-preference", "title": "💛 No preference — you decide!" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Almost there!",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "FINAL" },
+              "payload": {
+                "category":      "${data.category}",
+                "budget":        "${data.budget}",
+                "diamond_style": "${form.diamond_style}"
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "FINAL",
+      "title": "Almost Done!",
+      "terminal": true,
+      "data": {
+        "category":      { "type": "string", "__example__": "rings" },
+        "budget":        { "type": "string", "__example__": "1l-5l" },
+        "diamond_style": { "type": "string", "__example__": "solitaire" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextSubheading",
+            "text": "Beautiful choice! Is there a special occasion you're celebrating? 🎉"
+          },
+          {
+            "type": "TextBody",
+            "text": "Select all that apply — or skip if you're just browsing 🛍️"
+          },
+          {
+            "type": "CheckboxGroup",
+            "name": "occasions",
+            "label": "Occasions (optional)",
+            "required": false,
+            "data-source": [
+              { "id": "engagement",         "title": "💍 Engagement" },
+              { "id": "wedding",            "title": "👰 Wedding" },
+              { "id": "anniversary",        "title": "🥂 Anniversary" },
+              { "id": "date-night",         "title": "🌙 Date Night" },
+              { "id": "everyday-jewellery", "title": "🌸 Everyday Wear" }
+            ]
+          },
+          {
+            "type": "TextBody",
+            "text": "Anything else you'd like us to know? 🥰"
+          },
+          {
+            "type": "TextArea",
+            "name": "free_text",
+            "label": "A style, a feeling, a design you saw... (optional)",
+            "required": false
+          },
+          {
+            "type": "Footer",
+            "label": "Find my perfect piece 💍",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "category":      "${data.category}",
+                "budget":        "${data.budget}",
+                "diamond_style": "${data.diamond_style}",
+                "occasions":     "${form.occasions}",
+                "free_text":     "${form.free_text}"
+              }
+            }
+          }
+        ]
+      }
+    }
+
+  ]
+}

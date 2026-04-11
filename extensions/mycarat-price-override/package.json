@@ -1,0 +1,8 @@
+{
+  "name": "mycarat-price-override",
+  "version": "1.0.0",
+  "description": "Cart Transform function — overrides checkout price with MyCarat's calculated price",
+  "dependencies": {
+    "@shopify/shopify_function": "^2.0.1"
+  }
+}
