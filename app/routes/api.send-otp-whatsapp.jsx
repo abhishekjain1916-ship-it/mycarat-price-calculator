@@ -1,42 +1,70 @@
 /**
  * api.send-otp-whatsapp.jsx
- * Custom SMS sender for Supabase phone auth — delivers OTP via WhatsApp.
- *
- * Supabase calls this endpoint when a phone OTP needs to be sent.
- * Payload from Supabase: { phone, otp }
+ * Step 1 of phone auth — generate OTP, store it, deliver via WhatsApp.
  *
  * POST /api/send-otp-whatsapp
+ * Body: { phone }  — e.164 format e.g. +919876543210
  */
+
+import crypto from "crypto";
+import { supabase } from "../supabase.server";
 
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID;
 const GRAPH_URL       = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
 
+const OTP_EXPIRY_MINUTES = 10;
+const MAX_ATTEMPTS       = 5;
+
 export const action = async ({ request }) => {
   if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return json({ error: "Method not allowed" }, { status: 405 });
   }
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { phone, otp } = body;
+  const phone = (body.phone || "").replace(/\s+/g, "");
 
-  if (!phone || !otp) {
-    return new Response(JSON.stringify({ error: "Missing phone or otp" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (!phone || !/^\+[1-9]\d{7,14}$/.test(phone)) {
+    return json({ error: "Invalid phone number. Use international format e.g. +919876543210" }, { status: 400 });
   }
 
-  // Normalise phone — Supabase sends e.164 format e.g. +919876543210
-  const to = phone.replace(/\s+/g, "");
+  // Rate limit — max 3 OTPs per phone per 10 minutes
+  const { count } = await supabase
+    .from("phone_otps")
+    .select("*", { count: "exact", head: true })
+    .eq("phone", phone)
+    .gt("expires_at", new Date().toISOString());
 
-  const message = `Your MyCarat verification code is *${otp}*.\n\nValid for 10 minutes. Do not share this with anyone.`;
+  if (count >= 3) {
+    return json({ error: "Too many OTP requests. Please wait before trying again." }, { status: 429 });
+  }
+
+  // Generate 6-digit OTP
+  const otp     = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpHash = crypto.createHash("sha256").update(otp + phone).digest("hex");
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
+
+  // Delete any existing OTPs for this phone before inserting new one
+  await supabase.from("phone_otps").delete().eq("phone", phone);
+
+  // Store hashed OTP
+  const { error: insertError } = await supabase
+    .from("phone_otps")
+    .insert({ phone, otp_hash: otpHash, expires_at: expiresAt });
+
+  if (insertError) {
+    console.error("[OTP] Failed to store OTP:", insertError.message);
+    return json({ error: "Could not generate OTP. Please try again." }, { status: 500 });
+  }
+
+  // Send via WhatsApp
+  const message = `Your MyCarat verification code is *${otp}*.\n\nValid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this with anyone.`;
 
   try {
     const res = await fetch(GRAPH_URL, {
@@ -47,7 +75,7 @@ export const action = async ({ request }) => {
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
-        to,
+        to: phone,
         type: "text",
         text: { body: message },
       }),
@@ -57,23 +85,24 @@ export const action = async ({ request }) => {
 
     if (!res.ok) {
       console.error("[OTP] WhatsApp send failed:", JSON.stringify(data));
-      return new Response(JSON.stringify({ error: "WhatsApp delivery failed", detail: data }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      });
+      // Clean up stored OTP since we couldn't deliver
+      await supabase.from("phone_otps").delete().eq("phone", phone);
+      return json({ error: "Could not send WhatsApp message. Check that this number has WhatsApp." }, { status: 502 });
     }
 
-    console.log(`[OTP] Sent to ${to} — message id: ${data?.messages?.[0]?.id}`);
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    console.log(`[OTP] Sent to ${phone} — wa message id: ${data?.messages?.[0]?.id}`);
+    return json({ success: true, expires_in: OTP_EXPIRY_MINUTES * 60 });
 
   } catch (err) {
     console.error("[OTP] Unexpected error:", err.message);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    await supabase.from("phone_otps").delete().eq("phone", phone);
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 };
+
+function json(data, init = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers || {}) },
+  });
+}
