@@ -15,9 +15,22 @@ import { supabase } from "../supabase.server";
 
 const MAX_ATTEMPTS = 5;
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export const loader = async ({ request }) => {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  return json({ error: "Use POST" }, { status: 405 });
+};
+
 export const action = async ({ request }) => {
-  if (request.method !== "POST") {
-    return json({ error: "Method not allowed" }, { status: 405 });
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
   let body;
@@ -139,6 +152,6 @@ export const action = async ({ request }) => {
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers || {}) },
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json", ...(init.headers || {}) },
   });
 }
