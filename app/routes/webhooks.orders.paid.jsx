@@ -9,8 +9,7 @@
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
 
-const GOLDBACK_RATE = 0.02; // 2% of stone value
-const LOCK_DAYS     = 30;   // Goldback locked for 30 days post-order
+const LOCK_DAYS = 30; // Goldback locked for 30 days post-order
 
 export const action = async ({ request }) => {
   const { topic, shop, payload } = await authenticate.webhook(request);
@@ -129,6 +128,38 @@ async function processOrder(order) {
     return;
   }
 
+  // Look up Goldback rate from goldback_rates table
+  // Priority: product → product_type → collection → default
+  const { data: rates } = await supabase
+    .from("goldback_rates")
+    .select("scope, scope_value, rate_percent")
+    .order("scope");
+
+  let ratePercent = 0;
+  if (rates && rates.length > 0) {
+    const PRIORITY = { product: 1, product_type: 2, collection: 3, default: 4 };
+    const sorted = rates.sort((a, b) => (PRIORITY[a.scope] || 9) - (PRIORITY[b.scope] || 9));
+
+    for (const rule of sorted) {
+      if (rule.scope === "default") { ratePercent = parseFloat(rule.rate_percent); break; }
+      // Check product-level or type-level matches from line items
+      for (const item of lineItems) {
+        if (rule.scope === "product" && item.properties?.["Product Handle"] === rule.scope_value) {
+          ratePercent = parseFloat(rule.rate_percent); break;
+        }
+        if (rule.scope === "product_type" && item.properties?.["Product Type"] === rule.scope_value) {
+          ratePercent = parseFloat(rule.rate_percent); break;
+        }
+      }
+      if (ratePercent > 0) break;
+    }
+  }
+
+  if (ratePercent <= 0) {
+    console.log(`[webhook] no Goldback rate configured — skipping for order ${orderNumber}`);
+    return;
+  }
+
   // Look up current gold rate to convert INR → coins
   const { data: goldRow } = await supabase
     .from("gold_prices")
@@ -142,9 +173,9 @@ async function processOrder(order) {
     return;
   }
 
-  // coins = (stone_value × 2%) ÷ (gold_rate_per_gram / 1000)
+  // coins = (stone_value × rate%) ÷ (gold_rate_per_gram / 1000)
   // 1 coin = 1mg gold = gold_rate / 1000 INR
-  const goldbackInr = stoneValue * GOLDBACK_RATE;
+  const goldbackInr = stoneValue * (ratePercent / 100);
   const coins = Math.round(goldbackInr / (goldPerGram / 1000));
 
   if (coins <= 0) return;
