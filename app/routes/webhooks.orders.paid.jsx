@@ -1,12 +1,15 @@
 /**
  * MC-59 — Order sync: Shopify orders/paid → Supabase shopify_orders
- * MC-60 — Goldback accrual: 2% of order total → goldback_transactions + goldback_wallet
+ * MC-60 — Goldback accrual: 2% of stone value → Gold Coins (1 coin = 1mg gold)
+ *
+ * Accounting: coins = (stone_value × rate%) ÷ (gold_rate_per_gram / 1000)
+ * INR value is never stored — always derived at display time.
  */
 
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
 
-const GOLDBACK_RATE = 0.02; // 2% of order total
+const GOLDBACK_RATE = 0.02; // 2% of stone value
 const LOCK_DAYS     = 30;   // Goldback locked for 30 days post-order
 
 export const action = async ({ request }) => {
@@ -113,19 +116,48 @@ async function processOrder(order) {
     return;
   }
 
-  const goldbackAmount = Math.round(totalPrice * GOLDBACK_RATE * 100) / 100;
+  // Calculate stone value from line item properties (set by price calculator at checkout)
+  let stoneValue = 0;
+  for (const item of lineItems) {
+    const sv = parseFloat(item.properties?.["Stone Value"] || 0);
+    stoneValue += sv * (item.quantity || 1);
+  }
 
-  if (goldbackAmount <= 0) return;
+  // If no stone value in properties, skip Goldback (can't calculate coins without it)
+  if (stoneValue <= 0) {
+    console.log(`[webhook] no stone value in line items — skipping Goldback for order ${orderNumber}`);
+    return;
+  }
 
-  // 3a. Write transaction (locked — unlocks after LOCK_DAYS)
+  // Look up current gold rate to convert INR → coins
+  const { data: goldRow } = await supabase
+    .from("gold_prices")
+    .select("price_per_gram")
+    .eq("karat", "24k")
+    .single();
+
+  const goldPerGram = parseFloat(goldRow?.price_per_gram || 0);
+  if (goldPerGram <= 0) {
+    console.error(`[webhook] gold_prices has no 24k rate — cannot calculate Goldback coins`);
+    return;
+  }
+
+  // coins = (stone_value × 2%) ÷ (gold_rate_per_gram / 1000)
+  // 1 coin = 1mg gold = gold_rate / 1000 INR
+  const goldbackInr = stoneValue * GOLDBACK_RATE;
+  const coins = Math.round(goldbackInr / (goldPerGram / 1000));
+
+  if (coins <= 0) return;
+
+  // 3a. Write transaction
   const { error: txnError } = await supabase
     .from("goldback_transactions")
     .insert({
-      user_id:     userId,
-      order_id:    shopifyId,
-      type:        "earn",
-      amount_inr:  goldbackAmount,
-      description: `2% Goldback on order ${orderNumber}`,
+      user_id:      userId,
+      order_id:     shopifyId,
+      type:         "earn",
+      amount_coins: coins,
+      description:  `${coins} Gold Coins on order ${orderNumber}`,
     });
 
   if (txnError) {
@@ -134,24 +166,23 @@ async function processOrder(order) {
   }
 
   // 3b. Upsert wallet balance
-  // First check if wallet exists
   const { data: existing } = await supabase
     .from("goldback_wallet")
-    .select("balance_inr")
+    .select("balance_coins")
     .eq("user_id", userId)
     .single();
 
   if (existing) {
-    const newBalance = Math.round((parseFloat(existing.balance_inr) + goldbackAmount) * 100) / 100;
+    const newBalance = parseInt(existing.balance_coins || 0) + coins;
     await supabase
       .from("goldback_wallet")
-      .update({ balance_inr: newBalance, updated_at: new Date().toISOString() })
+      .update({ balance_coins: newBalance, updated_at: new Date().toISOString() })
       .eq("user_id", userId);
   } else {
     await supabase
       .from("goldback_wallet")
-      .insert({ user_id: userId, balance_inr: goldbackAmount });
+      .insert({ user_id: userId, balance_coins: coins });
   }
 
-  console.log(`[webhook] Goldback ₹${goldbackAmount} accrued for user ${userId} (locks ${LOCK_DAYS}d)`);
+  console.log(`[webhook] Goldback ${coins} coins accrued for user ${userId} on order ${orderNumber}`);
 }
