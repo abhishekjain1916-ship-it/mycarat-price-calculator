@@ -162,12 +162,14 @@ async function processOrder(order) {
 
   // Look up current gold rate to convert INR → coins
   const { data: goldRow } = await supabase
-    .from("gold_prices")
-    .select("price_per_gram")
-    .eq("karat", "24k")
+    .from("metal_rates")
+    .select("rate_per_gram")
+    .eq("metal", "gold")
+    .order("fetched_at", { ascending: false })
+    .limit(1)
     .single();
 
-  const goldPerGram = parseFloat(goldRow?.price_per_gram || 0);
+  const goldPerGram = parseFloat(goldRow?.rate_per_gram || 0);
   if (goldPerGram <= 0) {
     console.error(`[webhook] gold_prices has no 24k rate — cannot calculate Goldback coins`);
     return;
