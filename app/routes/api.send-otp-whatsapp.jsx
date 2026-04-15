@@ -75,9 +75,7 @@ export const action = async ({ request }) => {
     return json({ error: "Could not generate OTP. Please try again." }, { status: 500 });
   }
 
-  // Send via WhatsApp
-  const message = `Your MyCarat verification code is *${otp}*.\n\nValid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this with anyone.`;
-
+  // Send via WhatsApp using approved authentication template
   try {
     const res = await fetch(GRAPH_URL, {
       method: "POST",
@@ -88,8 +86,23 @@ export const action = async ({ request }) => {
       body: JSON.stringify({
         messaging_product: "whatsapp",
         to: phone,
-        type: "text",
-        text: { body: message },
+        type: "template",
+        template: {
+          name: "mycarat_otp",
+          language: { code: "en_US" },
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: otp }]
+            },
+            {
+              type: "button",
+              sub_type: "url",
+              index: "0",
+              parameters: [{ type: "text", text: otp }]
+            }
+          ]
+        }
       }),
     });
 
