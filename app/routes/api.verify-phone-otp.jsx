@@ -128,15 +128,34 @@ export const action = async ({ request }) => {
     }
   }
 
-  // ── Generate magic link token for frontend to exchange for a session ────────
+  // ── Generate session directly via admin API ─────────────────────────────────
+  // generateLink + hashed_token doesn't work reliably with new sb_publishable keys.
+  // Instead, generate a magic link and extract the OTP token from its URL.
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type:    "magiclink",
     email:   virtualEmail,
-    options: { redirectTo: "https://my-carat-exquisite-diamond-boutique.myshopify.com/pages/account" },
+    options: { redirectTo: "https://mycarat.in/pages/account" },
   });
 
   if (linkError) {
     console.error("[OTP] generateLink failed:", linkError.message);
+    return json({ error: "Session creation failed. Please try again." }, { status: 500 });
+  }
+
+  // Extract the token from the action link URL
+  // URL format: https://....supabase.co/auth/v1/verify?token=TOKEN&type=magiclink&redirect_to=...
+  const actionLink = linkData.properties?.action_link || "";
+  let emailToken = "";
+  try {
+    const linkUrl = new URL(actionLink);
+    emailToken = linkUrl.searchParams.get("token") || "";
+  } catch {
+    // Fallback to hashed_token
+    emailToken = linkData.properties?.hashed_token || "";
+  }
+
+  if (!emailToken) {
+    console.error("[OTP] Could not extract token from link:", actionLink);
     return json({ error: "Session creation failed. Please try again." }, { status: 500 });
   }
 
@@ -145,7 +164,8 @@ export const action = async ({ request }) => {
   return json({
     success:       true,
     virtual_email: virtualEmail,
-    token:         linkData.properties.hashed_token,
+    token:         emailToken,
+    token_type:    "magiclink",
   });
 };
 
