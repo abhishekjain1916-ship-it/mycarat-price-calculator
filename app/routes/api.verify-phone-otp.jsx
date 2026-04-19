@@ -128,9 +128,10 @@ export const action = async ({ request }) => {
     }
   }
 
-  // ── Generate session directly via admin API ─────────────────────────────────
-  // generateLink + hashed_token doesn't work reliably with new sb_publishable keys.
-  // Instead, generate a magic link and extract the OTP token from its URL.
+  // ── Generate session directly ────────────────────────────────────────────────
+  // Magic link token exchange doesn't work with sb_publishable keys.
+  // Instead, use admin.generateLink to verify the email, then return the
+  // action_link URL. Frontend redirects to it — Supabase handles the session.
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type:    "magiclink",
     email:   virtualEmail,
@@ -142,30 +143,18 @@ export const action = async ({ request }) => {
     return json({ error: "Session creation failed. Please try again." }, { status: 500 });
   }
 
-  // Extract the token from the action link URL
-  // URL format: https://....supabase.co/auth/v1/verify?token=TOKEN&type=magiclink&redirect_to=...
   const actionLink = linkData.properties?.action_link || "";
-  let emailToken = "";
-  try {
-    const linkUrl = new URL(actionLink);
-    emailToken = linkUrl.searchParams.get("token") || "";
-  } catch {
-    // Fallback to hashed_token
-    emailToken = linkData.properties?.hashed_token || "";
-  }
 
-  if (!emailToken) {
-    console.error("[OTP] Could not extract token from link:", actionLink);
+  if (!actionLink) {
+    console.error("[OTP] No action_link returned");
     return json({ error: "Session creation failed. Please try again." }, { status: 500 });
   }
 
   console.log(`[OTP] Phone auth success for ${phone} — user ${userId}`);
 
   return json({
-    success:       true,
-    virtual_email: virtualEmail,
-    token:         emailToken,
-    token_type:    "magiclink",
+    success:     true,
+    action_link: actionLink,
   });
 };
 
