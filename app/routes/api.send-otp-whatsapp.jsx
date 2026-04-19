@@ -89,7 +89,7 @@ export const action = async ({ request }) => {
         type: "template",
         template: {
           name: "mycarat_otp",
-          language: { code: "en_US" },
+          language: { code: "en" },
           components: [
             {
               type: "body",
