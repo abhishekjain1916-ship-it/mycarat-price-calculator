@@ -9,6 +9,7 @@
  */
 
 import { supabase } from "../supabase.server";
+import { createSchedule } from "../utils/wa-scheduler.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
@@ -122,6 +123,12 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
 
   console.log(`[WA] Flow completed by ${waNumber}:`, payload);
 
+  // Route by payload shape — mc_scheduling_v1 has `mode` + `date` + `time`
+  if (payload.mode && payload.date && payload.time) {
+    return handleSchedulingFlowCompletion(waNumber, payload);
+  }
+
+  // Otherwise — original Find Something flow handler (FLOW_ID_FIND)
   const { category, budget, diamond_style, occasions, free_text } = payload;
 
   // Calculate lead score
@@ -157,6 +164,28 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
   // Send reply
   const reply = buildReplyMessage(category, budget, collectionUrl, agentFollowup);
   await sendTextMessage(waNumber, reply);
+}
+
+// ── Handle scheduling flow (mc_scheduling_v1) ────────────────────────────────
+async function handleSchedulingFlowCompletion(waNumber, payload) {
+  const result = await createSchedule({
+    waPhone:        waNumber.startsWith("+") ? waNumber : `+${waNumber}`,
+    waName:         null,                       // we don't get name in flow payload reliably
+    payload,
+    triggerContext: payload._context || null,   // optional context attached by client
+  });
+
+  if (!result.ok) {
+    await sendTextMessage(waNumber, `Hmm — ${result.error} Please try again.`);
+    return;
+  }
+
+  // Confirmation template was already sent by createSchedule().
+  // Send a friendly free-form follow-up too (we're inside the 24-hr window).
+  await sendTextMessage(
+    waNumber,
+    "All set! 📅 You'll get a reminder 15 minutes before our chat. Looking forward to it!"
+  );
 }
 
 // ── Build filtered collection URL ────────────────────────────────────────────

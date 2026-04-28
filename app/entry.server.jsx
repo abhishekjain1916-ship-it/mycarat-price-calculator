@@ -6,11 +6,14 @@ import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import { startRecalcWorker } from "./utils/recalc-worker.server";
 import { startDailyCron } from "./utils/daily-cron.server";
+import { startWaReminderCron } from "./utils/wa-reminder-cron.server";
 
 // Start the queue worker on server boot — not dependent on any route being hit
 startRecalcWorker();
 // INF-07 — Rebuild all prices daily at 10:00 AM IST (after IBJA rate publish)
 startDailyCron();
+// WA scheduler — dispatch 15-min reminders, every minute
+startWaReminderCron();
 
 export const streamTimeout = 5000;
 
