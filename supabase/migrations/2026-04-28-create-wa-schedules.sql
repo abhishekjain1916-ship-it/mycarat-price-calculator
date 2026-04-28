@@ -44,6 +44,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS wa_schedules_no_dup_active_idx
   WHERE status IN ('pending','confirmed');
 
 -- updated_at maintenance trigger
+-- Function uses a uniquely-scoped name so we own it; CREATE OR REPLACE is safe.
 CREATE OR REPLACE FUNCTION wa_schedules_set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -52,11 +53,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS wa_schedules_updated_at_trg ON wa_schedules;
-CREATE TRIGGER wa_schedules_updated_at_trg
-  BEFORE UPDATE ON wa_schedules
-  FOR EACH ROW
-  EXECUTE FUNCTION wa_schedules_set_updated_at();
+-- Idempotent trigger creation — additive only, no DROP.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname  = 'wa_schedules_updated_at_trg'
+      AND tgrelid = 'wa_schedules'::regclass
+  ) THEN
+    CREATE TRIGGER wa_schedules_updated_at_trg
+      BEFORE UPDATE ON wa_schedules
+      FOR EACH ROW
+      EXECUTE FUNCTION wa_schedules_set_updated_at();
+  END IF;
+END $$;
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- pg_cron-based reminder scheduler (optional — enable manually in Supabase
