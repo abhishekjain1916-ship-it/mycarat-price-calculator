@@ -111,9 +111,10 @@ export const action = async ({ request }) => {
       { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("[bespoke-lead] error:", err);
+    const msg = err?.message || String(err);
+    console.error("[bespoke-lead] error:", msg, err);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: msg }),
       { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
