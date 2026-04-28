@@ -15,6 +15,7 @@ const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID;
 const FLOW_ID_FIND    = "4318987678414529";
+const FLOW_ID_SCHEDULE = "1936816750291662";   // mc_scheduling_v1
 
 const GRAPH_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
 
