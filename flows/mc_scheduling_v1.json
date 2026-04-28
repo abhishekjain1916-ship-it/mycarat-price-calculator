@@ -53,8 +53,8 @@
             "name": "date",
             "label": "Date",
             "required": true,
-            "min-date": "today",
-            "max-date": "+15d"
+            "min-date": "2026-04-29",
+            "max-date": "2027-04-30"
           },
           {
             "type": "Footer",

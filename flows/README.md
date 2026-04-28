@@ -11,6 +11,15 @@ Flow JSON via webhook; you upload via Meta Business Manager → WhatsApp Manager
 |---|---|---|
 | `mc_scheduling_v1.json` | `mc_scheduling_v1` | Talk to expert · Talk to human · Off-hours fallback (universal scheduler) |
 
+### ⚠ Annual maintenance — date range
+
+The DatePicker in `mc_scheduling_v1.json` uses hardcoded `min-date` and
+`max-date` (Meta requires literal `YYYY-MM-DD`, not relative strings). Update
+both annually — bump `max-date` forward by ~1 year. The actual booking-window
+bounds (1h min, 15d max) are enforced server-side in
+`app/utils/wa-scheduler.server.js → normalizeScheduledAt`, so the Flow's wide
+date range is intentional and safe.
+
 ### How to register a Flow
 
 1. Open Meta Business Manager → WhatsApp Manager → your WABA → **Flows**
