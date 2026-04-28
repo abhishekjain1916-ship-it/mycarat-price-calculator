@@ -289,6 +289,10 @@ async function emailOps(row) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return;  // silently skip if not configured
 
+  // From address — falls back to Resend's shared sending domain so it works
+  // before mycarat.in is verified at Resend.
+  const fromAddress = process.env.RESEND_FROM || "onboarding@resend.dev";
+
   const subject = `[MyCarat] New schedule — ${MODE_LABELS[row.preferred_mode]} at ${formatIstDatetime(new Date(row.scheduled_at))}`;
   const lines = [
     `Customer: ${row.wa_name || "(unknown)"}`,
@@ -309,7 +313,7 @@ async function emailOps(row) {
       "Content-Type":  "application/json",
     },
     body: JSON.stringify({
-      from:    "MyCarat <ops@mycarat.in>",
+      from:    fromAddress,
       to:      [OPS_EMAIL_TO],
       subject,
       text:    lines,
