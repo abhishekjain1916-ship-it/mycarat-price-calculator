@@ -247,6 +247,43 @@ async function sendToMeta(payload) {
   }
 }
 
+// ── Confirm latest pending schedule for a phone ─────────────────────────────
+
+/**
+ * Find the most-imminent pending schedule for this phone (in the future)
+ * and mark it confirmed (user has re-affirmed they're ready).
+ * Returns the confirmed row, or null if none.
+ */
+export async function confirmLatestSchedule(rawPhone) {
+  const waPhone = rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+  const { data, error } = await supabase
+    .from("wa_schedules")
+    .select("id, scheduled_at, preferred_mode")
+    .eq("wa_phone", waPhone)
+    .eq("status", "pending")
+    .gt("scheduled_at", new Date().toISOString())
+    .order("scheduled_at", { ascending: true })
+    .limit(1);
+
+  if (error) {
+    console.error("[wa-scheduler] confirmLatestSchedule query failed:", error);
+    return null;
+  }
+  if (!data || data.length === 0) return null;
+
+  const target = data[0];
+  const { error: updErr } = await supabase
+    .from("wa_schedules")
+    .update({ status: "confirmed" })
+    .eq("id", target.id);
+
+  if (updErr) {
+    console.error("[wa-scheduler] confirmLatestSchedule update failed:", updErr);
+    return null;
+  }
+  return target;
+}
+
 // ── Cancel latest active schedule for a phone ───────────────────────────────
 
 /**

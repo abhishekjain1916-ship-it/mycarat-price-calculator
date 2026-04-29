@@ -9,7 +9,7 @@
  */
 
 import { supabase } from "../supabase.server";
-import { createSchedule, cancelLatestSchedule } from "../utils/wa-scheduler.server";
+import { createSchedule, cancelLatestSchedule, confirmLatestSchedule } from "../utils/wa-scheduler.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
@@ -210,12 +210,30 @@ async function handleTemplateButtonTap(waNumber, payload) {
     return;
   }
 
-  // READY — matches "I'm ready", "Im ready", or our custom payload (emoji is stripped above)
+  // READY — sent 15 min before call ("I'm ready 💍")
   if (norm.includes("ready") || norm === "schedule_ready") {
     await sendTextMessage(
       waNumber,
       "Wonderful! See you in 15 minutes 💍"
     );
+    return;
+  }
+
+  // GREAT — user re-affirms booking from confirmation template
+  // Promote schedule from pending -> confirmed.
+  if (norm === "great" || norm === "schedule_confirm" || norm.startsWith("great")) {
+    const confirmed = await confirmLatestSchedule(waNumber);
+    if (confirmed) {
+      await sendTextMessage(
+        waNumber,
+        "Lovely — looking forward to chatting with you. 💛 We'll send a reminder 15 minutes before."
+      );
+    } else {
+      await sendTextMessage(
+        waNumber,
+        "Lovely — looking forward to chatting with you. 💛"
+      );
+    }
     return;
   }
 
