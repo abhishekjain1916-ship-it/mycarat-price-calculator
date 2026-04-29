@@ -55,6 +55,7 @@ export const action = async ({ request }) => {
       preferred_time,
       customer_id,
       source_page,
+      supabase_user_id,
     } = fields;
 
     // Basic validation
@@ -84,6 +85,7 @@ export const action = async ({ request }) => {
     const { data: lead, error: dbError } = await supabase
       .from("bespoke_orders")
       .insert({
+        user_id:        supabase_user_id || null,
         customer_name:  contact_name,
         customer_email: contact_email,
         customer_phone: contact_phone || null,
