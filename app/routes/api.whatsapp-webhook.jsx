@@ -10,6 +10,7 @@
 
 import { supabase } from "../supabase.server";
 import { createSchedule, cancelLatestSchedule, confirmLatestSchedule } from "../utils/wa-scheduler.server";
+import { captureLeadIfNew } from "../utils/wa-lead-capture.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
@@ -52,7 +53,8 @@ export const action = async ({ request }) => {
 
       if (value?.messages?.length) {
         for (const msg of value.messages) {
-          await handleIncomingMessage(msg, value.metadata);
+          const contact = value.contacts?.find(c => c.wa_id === msg.from) || null;
+          await handleIncomingMessage(msg, contact);
         }
       }
 
@@ -68,11 +70,36 @@ export const action = async ({ request }) => {
 };
 
 // ── Handle incoming message ──────────────────────────────────────────────────
-async function handleIncomingMessage(msg, metadata) {
+async function handleIncomingMessage(msg, contact) {
   const from    = msg.from;
   const msgType = msg.type;
+  const waName  = contact?.profile?.name || null;
 
   console.log(`[WA] Message from ${from} — type: ${msgType}`);
+
+  // ── Lead capture (Phase 2b) ─────────────────────────────────────────────
+  // First-time WA contact = auto-create user + grant 10 GC signup reward.
+  // For new leads we infer page/intent from the pre-filled context text if
+  // present (text messages only; for non-text first contacts, intent is null).
+  let inferredPage   = null;
+  let inferredIntent = null;
+  if (msgType === "text") {
+    const ctx = detectPageContext(msg.text?.body || "");
+    if (ctx) {
+      inferredPage   = ctx.page;
+      inferredIntent = ctx.category || ctx.product || null;
+    }
+  }
+  const leadResult = await captureLeadIfNew(from, {
+    name:   waName,
+    page:   inferredPage,
+    intent: inferredIntent,
+  });
+
+  // First-time lead → send a free-form welcome (no template, inside the 24h window)
+  if (leadResult.isNew) {
+    await sendWelcomeFreeForm(from, waName);
+  }
 
   // Ensure conversation record exists
   const conversation = await upsertConversation(from);
@@ -530,6 +557,17 @@ function buildReplyMessage(category, budget, collectionUrl, agentFollowup) {
   }
 
   return msg;
+}
+
+// ── Welcome free-form message — sent on first WA contact (Phase 2b) ─────────
+async function sendWelcomeFreeForm(to, name) {
+  const greeting = name ? `Hi ${name}!` : "Hi!";
+  const body =
+    `${greeting} Welcome to MyCarat ✨\n\n` +
+    `🪙 We've added 10 Gold Coins to your wallet — your first reward for saying hi.\n` +
+    `Complete your profile to earn more.\n\n` +
+    `Tap the menu below to pick what's next.`;
+  await sendTextMessage(to, body);
 }
 
 // ── Send welcome message ──────────────────────────────────────────────────────
