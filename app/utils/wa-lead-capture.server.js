@@ -39,26 +39,51 @@ export async function captureLeadIfNew(rawPhone, opts = {}) {
     return { isNew: false, userId: existing.user_id };
   }
 
-  // Create the auth user (phone-confirmed = no OTP step needed)
+  // Mirror the existing OTP-flow pattern (api.verify-phone-otp.jsx):
+  // synthetic deterministic email + phone metadata. Works even when Supabase's
+  // phone-auth provider is disabled (only email is the actual auth method).
+  const virtualEmail = `phone_${phone.replace("+", "")}@phone.auth.mycarat`;
+
+  let userId = null;
+
   const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-    phone,
+    email:         virtualEmail,
+    email_confirm: true,
+    phone:         phone,
     phone_confirm: true,
+    user_metadata: { phone, signup_method: "wa_first_contact" },
   });
 
-  if (createErr || !created?.user?.id) {
-    console.error("[wa-lead-capture] createUser failed:", createErr?.message || createErr);
-    return { isNew: false, userId: null, error: createErr?.message || "createUser failed" };
+  if (createErr) {
+    // Race condition with the OTP flow — user may exist already by virtualEmail
+    if (createErr.message?.includes("already been registered")) {
+      const { data: { users } } = await supabase.auth.admin.listUsers();
+      const found = users.find(u => u.email === virtualEmail);
+      if (found) {
+        userId = found.id;
+      } else {
+        console.error("[wa-lead-capture] createUser failed (and listUsers didn't find):", createErr.message);
+        return { isNew: false, userId: null, error: createErr.message };
+      }
+    } else {
+      console.error("[wa-lead-capture] createUser failed:", createErr.message);
+      return { isNew: false, userId: null, error: createErr.message };
+    }
+  } else {
+    userId = created.user.id;
   }
 
-  const userId = created.user.id;
+  if (!userId) {
+    return { isNew: false, userId: null, error: "no userId resolved" };
+  }
 
   // Map phone -> user_id (UNIQUE on phone — race-safe)
   const { error: mapErr } = await supabase
     .from("auth_phone_users")
     .insert({ phone, user_id: userId });
-  if (mapErr) {
+  if (mapErr && mapErr.code !== "23505") {
     console.error("[wa-lead-capture] auth_phone_users insert failed:", mapErr.message);
-    // Continue anyway — non-fatal; we have the user_id
+    // Continue anyway — non-fatal
   }
 
   // Profile row with lead flag
