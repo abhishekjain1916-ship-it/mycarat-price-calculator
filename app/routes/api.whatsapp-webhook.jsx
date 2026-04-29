@@ -175,8 +175,19 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
 }
 
 // ── Handle template quick-reply button taps ──────────────────────────────────
+//
+// When templates are created via Meta Business Manager UI, the `payload`
+// sent on tap defaults to the BUTTON TEXT (the UI doesn't let you set a
+// separate payload). So we match by intent — strip emoji/punctuation,
+// lowercase, then keyword-match.
 async function handleTemplateButtonTap(waNumber, payload) {
-  if (payload === "schedule_cancel") {
+  const norm = (payload || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")    // strip emoji/punctuation
+    .trim();
+
+  // CANCEL — only if explicitly cancel (don't match "reschedule" which contains other words)
+  if (norm === "cancel" || norm === "schedule_cancel") {
     const cancelled = await cancelLatestSchedule(waNumber);
     if (cancelled) {
       await sendTextMessage(
@@ -192,14 +203,15 @@ async function handleTemplateButtonTap(waNumber, payload) {
     return;
   }
 
-  if (payload === "schedule_reschedule") {
-    // Cancel the existing booking (best-effort) so we don't leave a stale one
-    await cancelLatestSchedule(waNumber);
+  // RESCHEDULE — matches "Reschedule", "Need to reschedule", or our custom payload
+  if (norm.includes("reschedule")) {
+    await cancelLatestSchedule(waNumber);   // best-effort cancel old
     await sendSchedulingFlow(waNumber);
     return;
   }
 
-  if (payload === "schedule_ready") {
+  // READY — matches "I'm ready", "Im ready", or our custom payload (emoji is stripped above)
+  if (norm.includes("ready") || norm === "schedule_ready") {
     await sendTextMessage(
       waNumber,
       "Wonderful! See you in 15 minutes 💍"
@@ -207,7 +219,6 @@ async function handleTemplateButtonTap(waNumber, payload) {
     return;
   }
 
-  // Unknown template button payload — log + ignore silently
   console.warn(`[WA] Unknown template button payload: ${payload}`);
 }
 
