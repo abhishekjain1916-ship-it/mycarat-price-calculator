@@ -247,6 +247,42 @@ async function sendToMeta(payload) {
   }
 }
 
+// ── Cancel latest active schedule for a phone ───────────────────────────────
+
+/**
+ * Find the most-imminent pending/confirmed schedule for this phone (in the
+ * future) and mark it cancelled. Returns the cancelled row, or null if none.
+ */
+export async function cancelLatestSchedule(rawPhone) {
+  const waPhone = rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+  const { data, error } = await supabase
+    .from("wa_schedules")
+    .select("id, scheduled_at, preferred_mode")
+    .eq("wa_phone", waPhone)
+    .in("status", ["pending", "confirmed"])
+    .gt("scheduled_at", new Date().toISOString())
+    .order("scheduled_at", { ascending: true })
+    .limit(1);
+
+  if (error) {
+    console.error("[wa-scheduler] cancelLatestSchedule query failed:", error);
+    return null;
+  }
+  if (!data || data.length === 0) return null;
+
+  const target = data[0];
+  const { error: updErr } = await supabase
+    .from("wa_schedules")
+    .update({ status: "cancelled" })
+    .eq("id", target.id);
+
+  if (updErr) {
+    console.error("[wa-scheduler] cancelLatestSchedule update failed:", updErr);
+    return null;
+  }
+  return target;
+}
+
 // ── Reminder dispatch (called every minute) ─────────────────────────────────
 
 export async function dispatchDueReminders() {

@@ -9,7 +9,7 @@
  */
 
 import { supabase } from "../supabase.server";
-import { createSchedule } from "../utils/wa-scheduler.server";
+import { createSchedule, cancelLatestSchedule } from "../utils/wa-scheduler.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
@@ -93,7 +93,7 @@ async function handleIncomingMessage(msg, metadata) {
     return;
   }
 
-  // ── Button reply ──
+  // ── Button reply (interactive — buttons we sent in free-form messages) ──
   if (msgType === "interactive" && msg.interactive?.type === "button_reply") {
     const buttonId = msg.interactive.button_reply.id;
     if (buttonId === "find_something") {
@@ -103,6 +103,13 @@ async function handleIncomingMessage(msg, metadata) {
         "Of course! 😊 Go ahead and type your question — we're here to help."
       );
     }
+    return;
+  }
+
+  // ── Template quick-reply button tapped (template messages) ──
+  if (msgType === "button") {
+    const payload = msg.button?.payload;
+    await handleTemplateButtonTap(from, payload);
     return;
   }
 
@@ -165,6 +172,71 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
   // Send reply
   const reply = buildReplyMessage(category, budget, collectionUrl, agentFollowup);
   await sendTextMessage(waNumber, reply);
+}
+
+// ── Handle template quick-reply button taps ──────────────────────────────────
+async function handleTemplateButtonTap(waNumber, payload) {
+  if (payload === "schedule_cancel") {
+    const cancelled = await cancelLatestSchedule(waNumber);
+    if (cancelled) {
+      await sendTextMessage(
+        waNumber,
+        "Your schedule is cancelled. Want to book a new time? Just say so and I'll set it up. 💛"
+      );
+    } else {
+      await sendTextMessage(
+        waNumber,
+        "I couldn't find an active schedule to cancel. If you'd like to book a new time, just say so."
+      );
+    }
+    return;
+  }
+
+  if (payload === "schedule_reschedule") {
+    // Cancel the existing booking (best-effort) so we don't leave a stale one
+    await cancelLatestSchedule(waNumber);
+    await sendSchedulingFlow(waNumber);
+    return;
+  }
+
+  if (payload === "schedule_ready") {
+    await sendTextMessage(
+      waNumber,
+      "Wonderful! See you in 15 minutes 💍"
+    );
+    return;
+  }
+
+  // Unknown template button payload — log + ignore silently
+  console.warn(`[WA] Unknown template button payload: ${payload}`);
+}
+
+// ── Send scheduling flow trigger ─────────────────────────────────────────────
+async function sendSchedulingFlow(to) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "flow",
+      body: {
+        text: "Let's pick a new time! Choose how you'd like us to reach you and when. ✨",
+      },
+      action: {
+        name: "flow",
+        parameters: {
+          flow_message_version: "3",
+          flow_id:     FLOW_ID_SCHEDULE,
+          flow_cta:    "Schedule a chat",
+          flow_action: "navigate",
+          flow_action_payload: {
+            screen: "MODE",
+          },
+        },
+      },
+    },
+  };
+  await sendToMeta(payload);
 }
 
 // ── Handle scheduling flow (mc_scheduling_v1) ────────────────────────────────
