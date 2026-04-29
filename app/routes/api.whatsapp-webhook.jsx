@@ -113,8 +113,25 @@ async function handleIncomingMessage(msg, metadata) {
     return;
   }
 
-  // ── First text message — send welcome ──
+  // ── List reply (user picked a row in one of our page menus) ──
+  if (msgType === "interactive" && msg.interactive?.type === "list_reply") {
+    const rowId    = msg.interactive.list_reply.id;
+    const rowTitle = msg.interactive.list_reply.title;
+    await handleListReply(from, rowId, rowTitle);
+    return;
+  }
+
+  // ── Text message — try page-context match first, else welcome ──
   if (msgType === "text") {
+    const text = msg.text?.body || "";
+    const ctx  = detectPageContext(text);
+    if (ctx) {
+      if (ctx.page === "home")     await sendHomeMenu(from);
+      else if (ctx.page === "listing") await sendListingMenu(from, ctx.category);
+      else if (ctx.page === "product") await sendProductMenu(from, ctx.product);
+      else if (ctx.page === "checkout") await sendCheckoutMenu(from);
+      return;
+    }
     await sendWelcomeMessage(from);
   }
 }
@@ -266,6 +283,194 @@ async function sendSchedulingFlow(to) {
     },
   };
   await sendToMeta(payload);
+}
+
+// ── Page-context detection from pre-filled wa.me text ────────────────────────
+const CTX_HOME     = /exploring your store/i;
+const CTX_LISTING  = /Hi MyCarat\s*[-—–:]\s*browsing\s+(.+)/i;
+const CTX_PRODUCT  = /Hi MyCarat\s*[-—–:]\s*about\s+(.+)/i;
+const CTX_CHECKOUT = /(?:order help|need help with my order)/i;
+
+function detectPageContext(text) {
+  if (!text) return null;
+  if (CTX_HOME.test(text))    return { page: "home" };
+  let m = text.match(CTX_LISTING);
+  if (m) return { page: "listing", category: m[1].trim() };
+  m = text.match(CTX_PRODUCT);
+  if (m) return { page: "product", product: m[1].trim() };
+  if (CTX_CHECKOUT.test(text)) return { page: "checkout" };
+  return null;
+}
+
+// ── Per-page list menus ─────────────────────────────────────────────────────
+async function sendHomeMenu(to) {
+  return sendListMessage(to, {
+    body: "Hi! 👋 How can we help today?",
+    button: "Choose an option",
+    rows: [
+      { id: "home_about_us",  title: "About us",            description: "Our story, founders, mission" },
+      { id: "home_help_find", title: "Help me find pieces", description: "Quick style quiz, curated picks" },
+      { id: "home_trust",     title: "Trust & safety",      description: "BIS, IGI, secured shipping" },
+      { id: "home_goldback",  title: "Earn Goldback",       description: "Rewards for signup & profile" },
+      { id: "home_human",     title: "Talk to a human",     description: "Schedule a quick chat with us" },
+    ],
+  });
+}
+
+async function sendListingMenu(to, category) {
+  const cat = (category || "").trim() || "jewellery";
+  return sendListMessage(to, {
+    body: `Browsing ${cat}? Here's how we can help.`,
+    button: "Choose an option",
+    rows: [
+      { id: "listing_help_find", title: "Help me find pieces", description: "Quick style quiz" },
+      { id: "listing_faqs",      title: "FAQs",                description: "Sizes, payments, returns" },
+      { id: "listing_expert",    title: "Talk to a jewellery expert", description: "Schedule a chat with our gemologist" },
+      { id: "listing_design",    title: "Share my design",     description: "Send us a sketch / photo" },
+      { id: "listing_human",     title: "Talk to a human",     description: "Schedule a chat with us" },
+    ],
+  });
+}
+
+async function sendProductMenu(to, productTitle) {
+  const prod = (productTitle || "").trim().slice(0, 40) || "this piece";
+  return sendListMessage(to, {
+    body: `About ${prod} — how can we help?`,
+    button: "Choose an option",
+    rows: [
+      { id: "product_expert",  title: "Talk to expert",      description: "Schedule a chat about this piece" },
+      { id: "product_buy",     title: "How do I buy this",   description: "Step-by-step purchase walkthrough" },
+      { id: "product_modify",  title: "Modify this piece",   description: "Different gold, stone or size" },
+      { id: "product_similar", title: "Explore similar",     description: "See related pieces" },
+      { id: "product_human",   title: "Talk to a human",     description: "Schedule a chat with us" },
+    ],
+  });
+}
+
+async function sendCheckoutMenu(to) {
+  return sendListMessage(to, {
+    body: "Let's get you through checkout.",
+    button: "Choose an option",
+    rows: [
+      { id: "checkout_expert",   title: "Talk to expert",       description: "Schedule a chat about my order" },
+      { id: "checkout_trust",    title: "Trust & safety",       description: "BIS, IGI, insurance" },
+      { id: "checkout_payment",  title: "Payment process",      description: "How payments work" },
+      { id: "checkout_returns",  title: "Return & exchange",    description: "Our 14-day refund + lifetime exchange" },
+      { id: "checkout_modify",   title: "Order modification",   description: "Change something on a placed order" },
+      { id: "checkout_human",    title: "Talk to a human",      description: "Schedule a chat with us" },
+    ],
+  });
+}
+
+// ── Generic list-message sender ─────────────────────────────────────────────
+async function sendListMessage(to, { body, button, rows }) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body:   { text: body },
+      action: {
+        button:   button || "Select",
+        sections: [{ title: "Quick help", rows }],
+      },
+    },
+  };
+  return sendToMeta(payload);
+}
+
+// ── List reply router ───────────────────────────────────────────────────────
+async function handleListReply(to, rowId, rowTitle) {
+  // STATIC INFO + URL button
+  if (rowId === "home_about_us") {
+    return sendStaticInfo(to,
+      "MyCarat is built by Abhishek and Ankuja Jain — graduates of IIT Roorkee and NIT Surat. We started MyCarat to bring honest, transparent fine jewellery to India. Every piece is BIS Hallmarked and IGI / GIA certified.",
+      "Read full story", "https://mycarat.in/pages/our-story");
+  }
+  if (rowId === "home_trust" || rowId === "checkout_trust") {
+    return sendStaticInfo(to,
+      "Every MyCarat piece comes with:\n• BIS Hallmark on every gold piece (HUID engraved)\n• IGI / GIA certification on every diamond and solitaire\n• Insured shipping pan-India\n• 14-day full refund\n• Lifetime exchange & buyback",
+      "Trust & safety", "https://mycarat.in/pages/trust");
+  }
+  if (rowId === "home_goldback") {
+    return sendStaticInfo(to,
+      "Earn Gold Coins (GC) for every action you take with MyCarat:\n• Sign up — get GC instantly\n• Complete your profile — earn more\n• Each GC reduces your gold weight when you buy a piece",
+      "View my Goldback wallet", "https://mycarat.in/pages/goldback-wallet");
+  }
+  if (rowId === "listing_faqs") {
+    return sendStaticInfo(to,
+      "Common questions answered: sizing, payments, certifications, returns, exchange, delivery timeline, and more.",
+      "See all FAQs", "https://mycarat.in/pages/faqs");
+  }
+  if (rowId === "product_buy") {
+    return sendStaticInfo(to,
+      "Buying a MyCarat piece:\n1. Customise gold purity, stones, size, engraving on the product page\n2. Add to cart and place order\n3. Our concierge calls in 1-2 business days to confirm\n4. We craft (5-7 days) → QC (3-5 days) → ship (3-5 days)",
+      "Open contact page", "https://mycarat.in/pages/contact");
+  }
+  if (rowId === "checkout_payment") {
+    return sendTextMessage(to,
+      "How payment works:\n\n1. Pay 20% advance via UPI or bank transfer\n2. We start manufacturing\n3. Pay balance via UPI / bank transfer once your piece is ready for QC\n4. Insured delivery follows\n\nNeed details? Just ask.");
+  }
+  if (rowId === "checkout_returns") {
+    return sendStaticInfo(to,
+      "Our return promise:\n• 14-day full refund — every piece, no questions\n• Free insured pickup\n• Refund to original payment method within 7 business days",
+      "Full refund policy", "https://mycarat.in/policies/refund-policy");
+  }
+
+  // FLOW actions — find-something
+  if (rowId === "home_help_find" || rowId === "listing_help_find") {
+    return sendFlow(to);
+  }
+
+  // FLOW actions — scheduling (the universal "talk to human / expert" flow)
+  if (
+    rowId === "home_human"     ||
+    rowId === "listing_expert" || rowId === "listing_human" ||
+    rowId === "product_expert" || rowId === "product_human" ||
+    rowId === "checkout_expert" || rowId === "checkout_human"
+  ) {
+    return sendSchedulingFlow(to);
+  }
+
+  // Phase 3 not built — route through scheduling for now
+  if (
+    rowId === "listing_design"  ||   // share my design
+    rowId === "product_modify"  ||   // modify product
+    rowId === "checkout_modify"      // order modification
+  ) {
+    await sendTextMessage(to, "Our concierge will help you with this. Pick a time that works:");
+    return sendSchedulingFlow(to);
+  }
+
+  // WEBSITE LINK
+  if (rowId === "product_similar") {
+    return sendStaticInfo(to,
+      "Explore our full catalogue of curated pieces:",
+      "View collection", "https://mycarat.in/collections/all");
+  }
+
+  // Fallback
+  console.warn(`[WA] Unknown list row id: ${rowId} (${rowTitle})`);
+  await sendTextMessage(to, "Got it! One of our experts will reach out shortly. 💛");
+}
+
+// ── Static-info helper: text + single CTA URL button ────────────────────────
+async function sendStaticInfo(to, bodyText, btnLabel, url) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      body:   { text: bodyText },
+      action: {
+        name: "cta_url",
+        parameters: { display_text: btnLabel.slice(0, 20), url },
+      },
+    },
+  };
+  return sendToMeta(payload);
 }
 
 // ── Handle scheduling flow (mc_scheduling_v1) ────────────────────────────────
