@@ -43,28 +43,17 @@ export const action = async ({ request }) => {
 
     const {
       path,
-      // this_product
-      product_handle,
       product_title,
       product_url,
-      product_image_url,
-      // another_product
       reference_input,
-      // something_else
       reference_url,
-      // notes
       bespoke_notes,
-      // contact
       contact_name,
       contact_phone,
       contact_email,
-      // time
       preferred_day,
       preferred_time,
-      // auth
       customer_id,
-      customer_email,
-      // source
       source_page,
     } = fields;
 
@@ -76,27 +65,30 @@ export const action = async ({ request }) => {
       );
     }
 
+    // Build description from all bespoke request details
+    const descParts = [];
+    const pathLabel = { this_product: "This product", another_product: "Another product", something_else: "Something else" }[path] || path;
+    descParts.push(`Request type: ${pathLabel}`);
+    if (product_title) descParts.push(`Product: ${product_title}`);
+    if (product_url)   descParts.push(`Product URL: ${product_url}`);
+    if (reference_input) descParts.push(`Reference: ${reference_input}`);
+    if (reference_url)   descParts.push(`Reference URL: ${reference_url}`);
+    if (imageStoragePath) descParts.push(`Reference image: ${imageStoragePath}`);
+    if (bespoke_notes)   descParts.push(`Notes: ${bespoke_notes}`);
+    if (preferred_day)   descParts.push(`Preferred day: ${preferred_day}`);
+    if (preferred_time)  descParts.push(`Preferred time: ${preferred_time}`);
+    if (source_page)     descParts.push(`Source page: ${source_page}`);
+    if (customer_id)     descParts.push(`Customer ID: ${customer_id}`);
+
     // Insert into Supabase
     const { data: lead, error: dbError } = await supabase
-      .from("bespoke_leads")
+      .from("bespoke_orders")
       .insert({
-        path,
-        product_handle:      product_handle   || null,
-        product_title:       product_title    || null,
-        product_url:         product_url      || null,
-        product_image_url:   product_image_url || null,
-        reference_input:     reference_input  || null,
-        reference_url:       reference_url    || null,
-        reference_image_url: imageStoragePath || null,
-        bespoke_notes:       bespoke_notes    || null,
-        contact_name,
-        contact_phone,
-        contact_email,
-        preferred_day:       preferred_day    || null,
-        preferred_time:      preferred_time   || null,
-        customer_id:         customer_id      || null,
-        customer_email:      customer_email   || null,
-        source_page:         source_page      || null,
+        customer_name:  contact_name,
+        customer_email: contact_email,
+        customer_phone: contact_phone || null,
+        status:         "received",
+        description:    descParts.join("\n"),
       })
       .select("id")
       .single();
