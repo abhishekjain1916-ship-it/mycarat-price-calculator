@@ -9,7 +9,13 @@
  */
 
 import { supabase } from "../supabase.server";
-import { createSchedule, cancelLatestSchedule, confirmLatestSchedule } from "../utils/wa-scheduler.server";
+import {
+  createSchedule,
+  cancelLatestSchedule,
+  confirmLatestSchedule,
+  sendGoldbackWelcomeTemplate,
+  sendGoldbackCreditedTemplate,
+} from "../utils/wa-scheduler.server";
 import { captureLeadIfNew } from "../utils/wa-lead-capture.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
@@ -17,6 +23,10 @@ const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID;
 const FLOW_ID_FIND    = "4318987678414529";
 const FLOW_ID_SCHEDULE = "1936816750291662";   // mc_scheduling_v1
+const FLOW_ID_PROFILE  = process.env.WA_FLOW_ID_PROFILE || "1296305858545931"; // mc_profile_v1
+const SIGNUP_GC        = 10;
+const SET_1_GC         = 20;
+const SET_2_GC         = 30;
 
 const GRAPH_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
 
@@ -96,9 +106,13 @@ async function handleIncomingMessage(msg, contact) {
     intent: inferredIntent,
   });
 
-  // First-time lead → send a free-form welcome (no template, inside the 24h window)
+  // First-time lead → send the goldback_welcome template (Flow + URL buttons).
+  // Template survives the 24h-window restriction and includes the
+  // "Earn +50 GC" Flow trigger that opens mc_profile_v1.
   if (leadResult.isNew) {
-    await sendWelcomeFreeForm(from, waName);
+    await sendGoldbackWelcomeTemplate(from, waName, SIGNUP_GC).catch(err =>
+      console.error("[WA] goldback_welcome template send failed:", err)
+    );
   }
 
   // Ensure conversation record exists
@@ -175,7 +189,13 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
 
   console.log(`[WA] Flow completed by ${waNumber}:`, payload);
 
-  // Route by payload shape — mc_scheduling_v1 has `mode` + `date` + `time`
+  // Route by payload shape:
+  //   - mc_profile_v1   has `flow === "mc_profile_v1"` + email + full_name
+  //   - mc_scheduling_v1 has `mode` + `date` + `time`
+  //   - everything else falls through to FLOW_ID_FIND
+  if (payload.flow === "mc_profile_v1") {
+    return handleProfileFlowCompletion(waNumber, payload);
+  }
   if (payload.mode && payload.date && payload.time) {
     return handleSchedulingFlowCompletion(waNumber, payload);
   }
@@ -500,6 +520,160 @@ async function sendStaticInfo(to, bodyText, btnLabel, url) {
   return sendToMeta(payload);
 }
 
+// ── Handle profile flow (mc_profile_v1) ──────────────────────────────────────
+//
+// Submitted payload (from flows/mc_profile_v1.json terminal screen):
+//   { flow: "mc_profile_v1", email, full_name, gender,
+//     date_of_birth?, anniversary?, profession }
+//
+// Server-side: mirrors api.claim-signup-reward.jsx validation, then claims
+// set_1 (20 GC) + set_2 (30 GC) atomically and confirms via goldback_credited.
+async function handleProfileFlowCompletion(waNumber, payload) {
+  const phone = waNumber.startsWith("+") ? waNumber : `+${waNumber}`;
+
+  // 1. Look up user_id (lead capture should have created this on first contact)
+  const { data: phoneRow } = await supabase
+    .from("auth_phone_users")
+    .select("user_id")
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (!phoneRow?.user_id) {
+    console.error("[profile-flow] no user found for phone", phone);
+    await sendTextMessage(waNumber, "Hmm — we couldn't find your account. Please send us a quick 'hi' to start over.");
+    return;
+  }
+  const userId = phoneRow.user_id;
+
+  // 2. Validate all fields server-side
+  const email      = (payload.email || "").trim().toLowerCase();
+  const fullName   = (payload.full_name || "").trim();
+  const gender     = payload.gender;
+  const dob        = (payload.date_of_birth || "").trim() || null;
+  const anniv      = (payload.anniversary   || "").trim() || null;
+  const profession = payload.profession;
+
+  const VALID_GENDERS = ["Male", "Female", "Other", "Prefer not to say"];
+  const VALID_PROFESSIONS = [
+    "Business Owner", "Corporate Professional", "Doctor / Medical",
+    "Lawyer / Legal", "Engineer / Tech", "Finance / Banking",
+    "Government / Public Sector", "Creative / Design", "Education / Academic",
+    "Homemaker", "Student", "Retired", "Other",
+  ];
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith("@phone.auth.mycarat")) {
+    await sendTextMessage(waNumber, "That email looks off — please try the form again with a real email address.");
+    return;
+  }
+  if (fullName.length < 2 || !/^[a-zA-Z\s.''-]+$/.test(fullName)) {
+    await sendTextMessage(waNumber, "Please use letters only in your name (no numbers or emoji). Try the form again.");
+    return;
+  }
+  if (!VALID_GENDERS.includes(gender)) {
+    await sendTextMessage(waNumber, "Gender field is missing — please run the form again.");
+    return;
+  }
+  if (!VALID_PROFESSIONS.includes(profession)) {
+    await sendTextMessage(waNumber, "Profession field is missing — please run the form again.");
+    return;
+  }
+  if (!dob && !anniv) {
+    await sendTextMessage(waNumber, "Please add at least one of birthday or anniversary so we can plan something. Tap the form again to add one.");
+    return;
+  }
+  if (dob) {
+    const ageMs = Date.now() - new Date(dob).getTime();
+    const age   = Math.floor(ageMs / (365.25 * 24 * 60 * 60 * 1000));
+    if (age < 15 || age > 100) {
+      await sendTextMessage(waNumber, "Birthday must indicate an age between 15 and 100. Please re-enter.");
+      return;
+    }
+  }
+  if (anniv && new Date(anniv) > new Date()) {
+    await sendTextMessage(waNumber, "Anniversary date can't be in the future. Please re-enter.");
+    return;
+  }
+
+  // 3. Update auth.users email (replace the synthetic phone_*@phone.auth.mycarat)
+  const { error: emailErr } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
+  if (emailErr && !emailErr.message?.includes("already")) {
+    console.error("[profile-flow] auth email update failed:", emailErr.message);
+  }
+
+  // 4. Persist profile fields
+  const { error: profErr } = await supabase
+    .from("profiles")
+    .update({
+      full_name:     fullName,
+      gender,
+      date_of_birth: dob,
+      anniversary:   anniv,
+      profession,
+    })
+    .eq("id", userId);
+  if (profErr) {
+    console.error("[profile-flow] profile update failed:", profErr.message);
+    await sendTextMessage(waNumber, "Couldn't save your profile right now. Please try again in a minute.");
+    return;
+  }
+
+  // 5. Claim set_1 + set_2 (idempotent via UNIQUE constraint)
+  let totalAwarded = 0;
+  for (const [level, coins] of [["set_1", SET_1_GC], ["set_2", SET_2_GC]]) {
+    const { error } = await supabase
+      .from("signup_rewards_claimed")
+      .insert({ user_id: userId, reward_level: level, amount_coins: coins });
+    if (error) {
+      if (error.code === "23505") {
+        console.log(`[profile-flow] ${level} already claimed for ${userId}`);
+        continue;
+      }
+      console.error(`[profile-flow] ${level} claim failed:`, error.message);
+      continue;
+    }
+    await supabase.from("goldback_transactions").insert({
+      user_id:      userId,
+      type:         "earn",
+      amount_coins: coins,
+      description:  `Signup reward: ${level} (${coins} Gold Coins) — via WhatsApp profile Flow`,
+    });
+    totalAwarded += coins;
+  }
+
+  // 6. Update wallet
+  let newBalance = 0;
+  const { data: wallet } = await supabase
+    .from("goldback_wallet")
+    .select("balance_coins")
+    .eq("user_id", userId)
+    .single();
+  if (wallet) {
+    newBalance = parseInt(wallet.balance_coins || 0) + totalAwarded;
+    await supabase
+      .from("goldback_wallet")
+      .update({ balance_coins: newBalance, updated_at: new Date().toISOString() })
+      .eq("user_id", userId);
+  } else {
+    newBalance = totalAwarded;
+    await supabase.from("goldback_wallet").insert({ user_id: userId, balance_coins: newBalance });
+  }
+
+  console.log(`[profile-flow] user=${userId} awarded=${totalAwarded} balance=${newBalance}`);
+
+  // 7. Confirmation: template if anything was newly claimed, else free-form note
+  if (totalAwarded > 0) {
+    await sendGoldbackCreditedTemplate(
+      phone,
+      fullName.split(" ")[0] || null,
+      totalAwarded,
+      "for completing your profile",
+      newBalance,
+    ).catch(err => console.error("[profile-flow] credited template send failed:", err));
+  } else {
+    await sendTextMessage(waNumber, "Your profile is already complete — we have your 50 Gold Coins on file. 💛");
+  }
+}
+
 // ── Handle scheduling flow (mc_scheduling_v1) ────────────────────────────────
 async function handleSchedulingFlowCompletion(waNumber, payload) {
   const result = await createSchedule({
@@ -557,17 +731,6 @@ function buildReplyMessage(category, budget, collectionUrl, agentFollowup) {
   }
 
   return msg;
-}
-
-// ── Welcome free-form message — sent on first WA contact (Phase 2b) ─────────
-async function sendWelcomeFreeForm(to, name) {
-  const greeting = name ? `Hi ${name}!` : "Hi!";
-  const body =
-    `${greeting} Welcome to MyCarat ✨\n\n` +
-    `🪙 We've added 10 Gold Coins to your wallet — your first reward for saying hi.\n` +
-    `Complete your profile to earn more.\n\n` +
-    `Tap the menu below to pick what's next.`;
-  await sendTextMessage(to, body);
 }
 
 // ── Send welcome message ──────────────────────────────────────────────────────

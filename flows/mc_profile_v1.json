@@ -1,0 +1,202 @@
+{
+  "version": "7.0",
+  "screens": [
+    {
+      "id": "HOOK",
+      "title": "Earn +50 Gold Coins",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Earn +50 Gold Coins"
+          },
+          {
+            "type": "TextBody",
+            "text": "Complete your profile and we'll add 50 Gold Coins (= 50 mg of fine gold) straight to your wallet."
+          },
+          {
+            "type": "TextBody",
+            "text": "Step 1 — your email (+20 GC)\nStep 2 — a few details about you (+30 GC)"
+          },
+          {
+            "type": "TextCaption",
+            "text": "Takes about 60 seconds. Coins never expire."
+          },
+          {
+            "type": "Footer",
+            "label": "Let's go",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "CONTACT" },
+              "payload": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONTACT",
+      "title": "Step 1 of 2 · Email",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Where can we reach you?"
+          },
+          {
+            "type": "TextBody",
+            "text": "We'll only use your email for order confirmations, exchange-value updates and the occasional collection drop."
+          },
+          {
+            "type": "TextInput",
+            "name": "email",
+            "label": "Email address",
+            "input-type": "email",
+            "required": true,
+            "helper-text": "e.g. you@example.com"
+          },
+          {
+            "type": "Footer",
+            "label": "Continue (+20 GC)",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "IDENTITY" },
+              "payload": {
+                "email": "${form.email}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "IDENTITY",
+      "title": "Step 2 of 2 · About you",
+      "data": {
+        "email": { "type": "string", "__example__": "you@example.com" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "How should we address you?"
+          },
+          {
+            "type": "TextInput",
+            "name": "full_name",
+            "label": "Full name",
+            "input-type": "text",
+            "required": true,
+            "min-chars": 2,
+            "max-chars": 80,
+            "helper-text": "As you'd like it on your invoice"
+          },
+          {
+            "type": "Dropdown",
+            "name": "gender",
+            "label": "Gender",
+            "required": true,
+            "data-source": [
+              { "id": "Male",                 "title": "Male" },
+              { "id": "Female",               "title": "Female" },
+              { "id": "Other",                "title": "Other" },
+              { "id": "Prefer not to say",    "title": "Prefer not to say" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "DETAILS" },
+              "payload": {
+                "email":     "${data.email}",
+                "full_name": "${form.full_name}",
+                "gender":    "${form.gender}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "DETAILS",
+      "title": "A few last details",
+      "terminal": true,
+      "data": {
+        "email":     { "type": "string", "__example__": "you@example.com" },
+        "full_name": { "type": "string", "__example__": "Asha Kapoor" },
+        "gender":    { "type": "string", "__example__": "Female" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "We use these to send a small surprise on your birthday or anniversary, and to tailor recommendations."
+          },
+          {
+            "type": "DatePicker",
+            "name": "date_of_birth",
+            "label": "Date of birth",
+            "required": false,
+            "min-date": "1926-04-29",
+            "max-date": "2011-04-29",
+            "helper-text": "Optional — we'll send a small gift"
+          },
+          {
+            "type": "DatePicker",
+            "name": "anniversary",
+            "label": "Anniversary",
+            "required": false,
+            "min-date": "1950-01-01",
+            "max-date": "2026-04-29",
+            "helper-text": "Optional — please add at least one of birthday or anniversary"
+          },
+          {
+            "type": "Dropdown",
+            "name": "profession",
+            "label": "What you do",
+            "required": true,
+            "data-source": [
+              { "id": "Business Owner",            "title": "Business Owner" },
+              { "id": "Corporate Professional",    "title": "Corporate Professional" },
+              { "id": "Doctor / Medical",          "title": "Doctor / Medical" },
+              { "id": "Lawyer / Legal",            "title": "Lawyer / Legal" },
+              { "id": "Engineer / Tech",           "title": "Engineer / Tech" },
+              { "id": "Finance / Banking",         "title": "Finance / Banking" },
+              { "id": "Government / Public Sector","title": "Government / Public Sector" },
+              { "id": "Creative / Design",         "title": "Creative / Design" },
+              { "id": "Education / Academic",      "title": "Education / Academic" },
+              { "id": "Homemaker",                 "title": "Homemaker" },
+              { "id": "Student",                   "title": "Student" },
+              { "id": "Retired",                   "title": "Retired" },
+              { "id": "Other",                     "title": "Other" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Claim my 50 Gold Coins",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "flow":          "mc_profile_v1",
+                "email":         "${data.email}",
+                "full_name":     "${data.full_name}",
+                "gender":        "${data.gender}",
+                "date_of_birth": "${form.date_of_birth}",
+                "anniversary":   "${form.anniversary}",
+                "profession":    "${form.profession}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

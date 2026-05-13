@@ -8,6 +8,7 @@
 
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
+import { sendGoldbackCreditedTemplate } from "../utils/wa-scheduler.server";
 
 const LOCK_DAYS = 30; // Goldback locked for 30 days post-order
 
@@ -205,17 +206,43 @@ async function processOrder(order) {
     .eq("user_id", userId)
     .single();
 
+  let newBalance;
   if (existing) {
-    const newBalance = parseInt(existing.balance_coins || 0) + coins;
+    newBalance = parseInt(existing.balance_coins || 0) + coins;
     await supabase
       .from("goldback_wallet")
       .update({ balance_coins: newBalance, updated_at: new Date().toISOString() })
       .eq("user_id", userId);
   } else {
+    newBalance = coins;
     await supabase
       .from("goldback_wallet")
-      .insert({ user_id: userId, balance_coins: coins });
+      .insert({ user_id: userId, balance_coins: newBalance });
   }
 
   console.log(`[webhook] Goldback ${coins} coins accrued for user ${userId} on order ${orderNumber}`);
+
+  // 3c. WhatsApp confirmation — only if user has a phone mapped + WA in scope
+  const { data: phoneRow } = await supabase
+    .from("auth_phone_users")
+    .select("phone")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (phoneRow?.phone) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", userId)
+      .maybeSingle();
+    const firstName = (profile?.full_name || "").split(" ")[0] || null;
+
+    sendGoldbackCreditedTemplate(
+      phoneRow.phone,
+      firstName,
+      coins,
+      `for your order ${orderNumber}`,
+      newBalance,
+    ).catch(err => console.error("[webhook] goldback_credited template send failed:", err));
+  }
 }

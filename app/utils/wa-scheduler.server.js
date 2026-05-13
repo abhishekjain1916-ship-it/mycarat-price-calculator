@@ -228,6 +228,72 @@ export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
   return sendToMeta(payload);
 }
 
+// ── Templates: GoldBack ─────────────────────────────────────────────────────
+
+/**
+ * Welcome template — fired on first WA contact (10 GC granted).
+ * Includes the Earn-+50 GC Flow trigger + wallet URL button.
+ *
+ * @param {string} waPhone — E.164 format ("+91...")
+ * @param {string} waName — display name from contact, may be null
+ * @param {number|string} balance — current GC balance shown in body
+ */
+export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
+  // Named parameters — Meta requires `parameter_name` for templates
+  // created/edited after mid-2024.
+  const payload = {
+    messaging_product: "whatsapp",
+    to: waPhone.replace(/^\+/, ""),
+    type: "template",
+    template: {
+      name: "goldback_welcome",
+      language: { code: "en" },
+      components: [{
+        type: "body",
+        parameters: [
+          { type: "text", parameter_name: "customer_name", text: waName || "there" },
+          { type: "text", parameter_name: "balance",       text: String(balance) },
+        ],
+      }],
+    },
+  };
+  return sendToMeta(payload);
+}
+
+/**
+ * Credited template — fired on every credit (set_1, set_2, purchase earn).
+ *
+ * @param {string} waPhone — E.164
+ * @param {string} waName — display name, may be null
+ * @param {number|string} coinsAdded — coins just credited
+ * @param {string} reason — human-readable reason ("for completing your profile",
+ *                          "for your order #1234", etc.)
+ * @param {number|string} balance — new total balance after credit
+ */
+export async function sendGoldbackCreditedTemplate(waPhone, waName, coinsAdded, reason, balance) {
+  // Numbered parameters — goldback_credited is registered under the
+  // Default Utility sub-type which requires {{1}}, {{2}}... format.
+  const payload = {
+    messaging_product: "whatsapp",
+    to: waPhone.replace(/^\+/, ""),
+    type: "template",
+    template: {
+      name: "goldback_credited",
+      language: { code: "en" },
+      components: [{
+        type: "body",
+        parameters: [
+          { type: "text", text: waName || "there" },
+          { type: "text", text: String(coinsAdded) },
+          { type: "text", text: reason || "as a thank-you" },
+          { type: "text", text: String(balance) },
+        ],
+      }],
+    },
+  };
+  return sendToMeta(payload);
+}
+
 async function sendToMeta(payload) {
   if (!ACCESS_TOKEN || !PHONE_NUMBER_ID) {
     console.error("[wa-scheduler] WA_ACCESS_TOKEN or WA_PHONE_NUMBER_ID not configured");
