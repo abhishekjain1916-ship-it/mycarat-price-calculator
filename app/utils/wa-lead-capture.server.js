@@ -86,11 +86,13 @@ export async function captureLeadIfNew(rawPhone, opts = {}) {
     // Continue anyway — non-fatal
   }
 
-  // Profile row with lead flag
+  // Profile row with lead flag.
+  // `profiles.user_id` is NOT NULL (separate from `id`), so set both.
   const { error: profErr } = await supabase
     .from("profiles")
     .insert({
       id:                 userId,
+      user_id:            userId,
       forced_from_lead:   true,
       wa_first_seen_at:   new Date().toISOString(),
       wa_first_seen_page: opts.page  || null,

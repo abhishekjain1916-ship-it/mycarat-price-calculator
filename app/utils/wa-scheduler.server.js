@@ -239,8 +239,12 @@ export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
  * @param {number|string} balance — current GC balance shown in body
  */
 export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
-  // Named parameters — Meta requires `parameter_name` for templates
-  // created/edited after mid-2024.
+  // Template is registered under the "Flows" Utility sub-type. The send call
+  // MUST include the Flow button component (sub_type "flow") with a
+  // flow_token — even though our routing keys off payload.flow inside the
+  // Flow JSON. Without it Meta returns error 131009 "Components sub_type
+  // invalid at index: 0".
+  const flowToken = `mc_profile_welcome_${Date.now()}`;
   const payload = {
     messaging_product: "whatsapp",
     to: waPhone.replace(/^\+/, ""),
@@ -248,13 +252,23 @@ export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
     template: {
       name: "goldback_welcome",
       language: { code: "en" },
-      components: [{
-        type: "body",
-        parameters: [
-          { type: "text", parameter_name: "customer_name", text: waName || "there" },
-          { type: "text", parameter_name: "balance",       text: String(balance) },
-        ],
-      }],
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", parameter_name: "customer_name", text: waName || "there" },
+            { type: "text", parameter_name: "balance",       text: String(balance) },
+          ],
+        },
+        {
+          type:     "button",
+          sub_type: "flow",
+          index:    "0",
+          parameters: [
+            { type: "action", action: { flow_token: flowToken } },
+          ],
+        },
+      ],
     },
   };
   return sendToMeta(payload);
