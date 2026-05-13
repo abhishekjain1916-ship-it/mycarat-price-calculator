@@ -142,6 +142,8 @@ async function handleIncomingMessage(msg, contact) {
       await sendTextMessage(from,
         "Of course! 😊 Go ahead and type your question — we're here to help."
       );
+    } else if (buttonId === "schedule_retry") {
+      await sendSchedulingFlow(from);
     }
     return;
   }
@@ -163,6 +165,12 @@ async function handleIncomingMessage(msg, contact) {
 
   // ── Text message — try page-context match first, else welcome ──
   if (msgType === "text") {
+    // First-contact suppression: the goldback_welcome template (sent above
+    // for isNew leads) already carries the right CTAs. Skip the page-menu /
+    // welcome-message routing so the lead doesn't see two back-to-back
+    // messages from us on first contact.
+    if (leadResult.isNew) return;
+
     const text = msg.text?.body || "";
     const ctx  = detectPageContext(text);
     if (ctx) {
@@ -265,6 +273,27 @@ async function handleTemplateButtonTap(waNumber, payload) {
   }
 
   console.warn(`[WA] Unknown template button payload: ${payload}`);
+}
+
+// ── Schedule rejection prompt — interactive button to retry the Flow ─────────
+async function sendScheduleRetryPrompt(to, reason) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text: `Hmm — ${reason}\n\nTap below to pick a different time.`,
+      },
+      action: {
+        buttons: [
+          { type: "reply", reply: { id: "schedule_retry", title: "Try again 📅" } },
+        ],
+      },
+    },
+  };
+  await sendToMeta(payload);
 }
 
 // ── Send scheduling flow trigger ─────────────────────────────────────────────
@@ -640,7 +669,7 @@ async function handleSchedulingFlowCompletion(waNumber, payload) {
   });
 
   if (!result.ok) {
-    await sendTextMessage(waNumber, `Hmm — ${result.error} Please try again.`);
+    await sendScheduleRetryPrompt(waNumber, result.error);
     return;
   }
 
