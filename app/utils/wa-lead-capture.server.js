@@ -172,3 +172,156 @@ async function grantSignupReward(userId) {
       .insert({ user_id: userId, balance_coins: SIGNUP_REWARD_COINS });
   }
 }
+
+/**
+ * Look up an existing auth.users row by email (case-insensitive). Returns the
+ * uuid or null. Wraps the existing `get_user_id_by_email` RPC (also used by
+ * webhooks.orders.paid.jsx).
+ */
+export async function findUserIdByEmail(email) {
+  if (!email) return null;
+  const { data, error } = await supabase
+    .rpc("get_user_id_by_email", { p_email: email.toLowerCase().trim() });
+  if (error) {
+    console.warn("[wa-lead-capture] user lookup by email failed:", error.message);
+    return null;
+  }
+  return data || null;
+}
+
+/**
+ * Email-collision merge: re-link a phone + all WA-created data from the
+ * synthetic auth user to an existing (real-email) auth user, then delete
+ * the synthetic. Idempotent; safe to call when realUserId === syntheticUserId
+ * (no-op).
+ *
+ * @param {string} phone — E.164 ("+91...")
+ * @param {string} syntheticUserId — the auth.users row created by captureLeadIfNew
+ * @param {string} realUserId — the existing auth.users row matching the email
+ * @returns {{ ok: boolean, mergedRewards: number, mergedCoins: number }}
+ */
+export async function mergePhoneIntoExistingUser(phone, syntheticUserId, realUserId) {
+  if (syntheticUserId === realUserId) {
+    return { ok: true, mergedRewards: 0, mergedCoins: 0, noOp: true };
+  }
+
+  // 1. Re-link phone mapping
+  const { error: mapErr } = await supabase
+    .from("auth_phone_users")
+    .update({ user_id: realUserId })
+    .eq("phone", phone);
+  if (mapErr) {
+    console.error("[wa-lead-capture/merge] auth_phone_users relink failed:", mapErr.message);
+  }
+
+  // 2. Migrate signup_rewards_claimed (dedupe against UNIQUE(user_id, reward_level))
+  let mergedRewards = 0;
+  const { data: synthRewards } = await supabase
+    .from("signup_rewards_claimed")
+    .select("*")
+    .eq("user_id", syntheticUserId);
+  for (const r of synthRewards || []) {
+    const { data: dupe } = await supabase
+      .from("signup_rewards_claimed")
+      .select("id")
+      .eq("user_id", realUserId)
+      .eq("reward_level", r.reward_level)
+      .maybeSingle();
+    if (dupe) {
+      // Existing real user already claimed this level — drop the synth row
+      await supabase.from("signup_rewards_claimed").delete().eq("id", r.id);
+    } else {
+      // Re-attribute to canonical user
+      await supabase
+        .from("signup_rewards_claimed")
+        .update({ user_id: realUserId })
+        .eq("id", r.id);
+      mergedRewards += 1;
+    }
+  }
+
+  // 3. Migrate goldback_transactions wholesale (no uniqueness constraint)
+  await supabase
+    .from("goldback_transactions")
+    .update({ user_id: realUserId })
+    .eq("user_id", syntheticUserId);
+
+  // 4. Merge wallets — sum balances onto canonical user, drop synth wallet
+  let mergedCoins = 0;
+  const { data: synthWallet } = await supabase
+    .from("goldback_wallet")
+    .select("balance_coins")
+    .eq("user_id", syntheticUserId)
+    .maybeSingle();
+  if (synthWallet && parseInt(synthWallet.balance_coins || 0) > 0) {
+    mergedCoins = parseInt(synthWallet.balance_coins);
+    const { data: realWallet } = await supabase
+      .from("goldback_wallet")
+      .select("balance_coins")
+      .eq("user_id", realUserId)
+      .maybeSingle();
+    if (realWallet) {
+      await supabase
+        .from("goldback_wallet")
+        .update({
+          balance_coins: parseInt(realWallet.balance_coins || 0) + mergedCoins,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", realUserId);
+    } else {
+      await supabase
+        .from("goldback_wallet")
+        .insert({ user_id: realUserId, balance_coins: mergedCoins });
+    }
+  }
+  await supabase.from("goldback_wallet").delete().eq("user_id", syntheticUserId);
+
+  // 5. Merge profile — fill any gaps on the canonical profile from the synth,
+  //    then delete the synth profile. (We do NOT overwrite real profile fields
+  //    that are already populated.)
+  const { data: synthProfile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("user_id", syntheticUserId)
+    .maybeSingle();
+  if (synthProfile) {
+    const { data: realProfile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", realUserId)
+      .maybeSingle();
+    const mergeable = [
+      "full_name", "gender", "date_of_birth", "anniversary", "profession",
+      "wa_first_seen_at", "wa_first_seen_page", "wa_first_intent",
+    ];
+    if (realProfile) {
+      const updates = {};
+      for (const key of mergeable) {
+        if (synthProfile[key] && !realProfile[key]) updates[key] = synthProfile[key];
+      }
+      // forced_from_lead = TRUE if either side was lead-originated
+      if (synthProfile.forced_from_lead && !realProfile.forced_from_lead) {
+        updates.forced_from_lead = true;
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from("profiles").update(updates).eq("user_id", realUserId);
+      }
+      await supabase.from("profiles").delete().eq("user_id", syntheticUserId);
+    } else {
+      // No real profile — re-key the synth profile onto the real user
+      await supabase
+        .from("profiles")
+        .update({ id: realUserId, user_id: realUserId })
+        .eq("user_id", syntheticUserId);
+    }
+  }
+
+  // 6. Drop the synthetic auth.users row (last so FK cascades don't surprise)
+  const { error: delErr } = await supabase.auth.admin.deleteUser(syntheticUserId);
+  if (delErr) {
+    console.warn("[wa-lead-capture/merge] synth auth delete failed:", delErr.message);
+  }
+
+  console.log(`[wa-lead-capture/merge] phone=${phone} merged synth=${syntheticUserId} into real=${realUserId} (rewards=${mergedRewards} coins=${mergedCoins})`);
+  return { ok: true, mergedRewards, mergedCoins };
+}

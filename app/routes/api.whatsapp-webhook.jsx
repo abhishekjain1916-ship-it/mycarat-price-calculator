@@ -16,7 +16,11 @@ import {
   sendGoldbackWelcomeTemplate,
   sendGoldbackCreditedTemplate,
 } from "../utils/wa-scheduler.server";
-import { captureLeadIfNew } from "../utils/wa-lead-capture.server";
+import {
+  captureLeadIfNew,
+  findUserIdByEmail,
+  mergePhoneIntoExistingUser,
+} from "../utils/wa-lead-capture.server";
 
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
@@ -528,7 +532,9 @@ async function handleProfileFlowCompletion(waNumber, payload) {
     await sendTextMessage(waNumber, "Hmm — we couldn't find your account. Please send us a quick 'hi' to start over.");
     return;
   }
-  const userId = phoneRow.user_id;
+  // `userId` may be reassigned later if an email-collision merge swaps us
+  // onto a canonical (existing-web-user) account.
+  let userId = phoneRow.user_id;
 
   // 2. Validate all fields server-side
   const email      = (payload.email || "").trim().toLowerCase();
@@ -579,23 +585,39 @@ async function handleProfileFlowCompletion(waNumber, payload) {
     return;
   }
 
-  // 3. Update auth.users email (replace the synthetic phone_*@phone.auth.mycarat)
-  const { error: emailErr } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
-  if (emailErr && !emailErr.message?.includes("already")) {
-    console.error("[profile-flow] auth email update failed:", emailErr.message);
+  // 3. Email collision check — if `email` already belongs to another Supabase
+  //    user (e.g., the user signed up via web earlier), merge our WA lead into
+  //    that canonical user instead of orphaning them on the synthetic email.
+  //    Otherwise: just update the synthetic email to the real one.
+  const existingUid = await findUserIdByEmail(email);
+  if (existingUid && existingUid !== userId) {
+    const mergeRes = await mergePhoneIntoExistingUser(phone, userId, existingUid);
+    if (!mergeRes.ok) {
+      console.error("[profile-flow] merge failed; continuing on synthetic user");
+    } else {
+      userId = existingUid;   // switch to canonical user for all subsequent ops
+    }
+  } else {
+    const { error: emailErr } = await supabase.auth.admin.updateUserById(userId, { email, email_confirm: true });
+    if (emailErr && !emailErr.message?.includes("already")) {
+      console.error("[profile-flow] auth email update failed:", emailErr.message);
+    }
   }
 
-  // 4. Persist profile fields
+  // 4. Persist profile fields (upsert — after merge, the canonical user may
+  //    not have a profiles row yet; in the no-collision path the row already
+  //    exists from captureLeadIfNew).
   const { error: profErr } = await supabase
     .from("profiles")
-    .update({
+    .upsert({
+      id:            userId,
+      user_id:       userId,
       full_name:     fullName,
       gender,
       date_of_birth: dob,
       anniversary:   anniv,
       profession,
-    })
-    .eq("id", userId);
+    }, { onConflict: "id" });
   if (profErr) {
     console.error("[profile-flow] profile update failed:", profErr.message);
     await sendTextMessage(waNumber, "Couldn't save your profile right now. Please try again in a minute.");
