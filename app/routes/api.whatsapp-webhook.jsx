@@ -21,7 +21,6 @@ import { captureLeadIfNew } from "../utils/wa-lead-capture.server";
 const VERIFY_TOKEN    = process.env.WA_VERIFY_TOKEN   || "mycarat_wa_verify";
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID;
-const FLOW_ID_FIND    = "4318987678414529";
 const FLOW_ID_SCHEDULE = "1936816750291662";   // mc_scheduling_v1
 const FLOW_ID_PROFILE  = process.env.WA_FLOW_ID_PROFILE || "1296305858545931"; // mc_profile_v1
 const SIGNUP_GC        = 10;
@@ -128,17 +127,17 @@ async function handleIncomingMessage(msg, contact) {
     metadata:       msg,
   });
 
-  // ── Flow completion (customer submitted the Find Something form) ──
+  // ── Flow completion — routes by payload shape (mc_profile_v1 or mc_scheduling_v1)
   if (msgType === "interactive" && msg.interactive?.type === "nfm_reply") {
-    await handleFlowCompletion(from, conversation.id, msg.interactive.nfm_reply);
+    await handleFlowCompletion(from, msg.interactive.nfm_reply);
     return;
   }
 
   // ── Button reply (interactive — buttons we sent in free-form messages) ──
   if (msgType === "interactive" && msg.interactive?.type === "button_reply") {
     const buttonId = msg.interactive.button_reply.id;
-    if (buttonId === "find_something") {
-      await sendFlow(from);
+    if (buttonId === "show_home_menu") {
+      await sendHomeMenu(from);
     } else if (buttonId === "have_question") {
       await sendTextMessage(from,
         "Of course! 😊 Go ahead and type your question — we're here to help."
@@ -178,7 +177,7 @@ async function handleIncomingMessage(msg, contact) {
 }
 
 // ── Handle flow completion ───────────────────────────────────────────────────
-async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
+async function handleFlowCompletion(waNumber, nfmReply) {
   let payload;
   try {
     payload = JSON.parse(nfmReply.response_json);
@@ -190,9 +189,8 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
   console.log(`[WA] Flow completed by ${waNumber}:`, payload);
 
   // Route by payload shape:
-  //   - mc_profile_v1   has `flow === "mc_profile_v1"` + email + full_name
+  //   - mc_profile_v1    has `flow === "mc_profile_v1"` + email + full_name
   //   - mc_scheduling_v1 has `mode` + `date` + `time`
-  //   - everything else falls through to FLOW_ID_FIND
   if (payload.flow === "mc_profile_v1") {
     return handleProfileFlowCompletion(waNumber, payload);
   }
@@ -200,42 +198,7 @@ async function handleFlowCompletion(waNumber, conversationId, nfmReply) {
     return handleSchedulingFlowCompletion(waNumber, payload);
   }
 
-  // Otherwise — original Find Something flow handler (FLOW_ID_FIND)
-  const { category, budget, diamond_style, occasions, free_text } = payload;
-
-  // Calculate lead score
-  let score = 0;
-  if (category && category !== "surprise") score += 5;
-  if (budget && budget !== "skip")         score += 15;
-  if (diamond_style)                       score += 5;
-  if (occasions && occasions.length > 0)   score += 10;
-  if (free_text && free_text.trim())       score += 10;
-
-  const agentFollowup = score >= 25;
-
-  // Save lead to Supabase
-  await supabase.from("wa_leads").insert({
-    conversation_id: conversationId,
-    wa_number:       waNumber,
-    flow_id:         FLOW_ID_FIND,
-    category,
-    occasions:       Array.isArray(occasions) ? occasions.join(",") : (occasions || ""),
-    budget,
-    diamond_style,
-    free_text:       free_text || null,
-    lead_score:      score,
-    agent_followup:  agentFollowup,
-    raw_payload:     payload,
-  });
-
-  console.log(`[WA] Lead saved — score: ${score}, followup: ${agentFollowup}`);
-
-  // Build collection URL
-  const collectionUrl = buildCollectionUrl(category, budget, diamond_style);
-
-  // Send reply
-  const reply = buildReplyMessage(category, budget, collectionUrl, agentFollowup);
-  await sendTextMessage(waNumber, reply);
+  console.warn(`[WA] Unknown flow payload shape from ${waNumber}:`, payload);
 }
 
 // ── Handle template quick-reply button taps ──────────────────────────────────
@@ -355,11 +318,10 @@ async function sendHomeMenu(to) {
     body: "Hi! 👋 How can we help today?",
     button: "Choose an option",
     rows: [
-      { id: "home_about_us",  title: "About us",            description: "Our story, founders, mission" },
-      { id: "home_help_find", title: "Help me find pieces", description: "Quick style quiz, curated picks" },
-      { id: "home_trust",     title: "Trust & safety",      description: "BIS, IGI, secured shipping" },
-      { id: "home_goldback",  title: "Earn Goldback",       description: "Rewards for signup & profile" },
-      { id: "home_human",     title: "Talk to a human",     description: "Schedule a quick chat with us" },
+      { id: "home_about_us", title: "About us",          description: "Our story, founders, mission" },
+      { id: "home_trust",    title: "Trust & safety",    description: "BIS, IGI, secured shipping" },
+      { id: "home_goldback", title: "Earn Goldback",     description: "Rewards for signup & profile" },
+      { id: "home_human",    title: "Talk to a human",   description: "Schedule a quick chat with us" },
     ],
   });
 }
@@ -370,11 +332,10 @@ async function sendListingMenu(to, category) {
     body: `Browsing ${cat}? Here's how we can help.`,
     button: "Choose an option",
     rows: [
-      { id: "listing_help_find", title: "Help me find pieces", description: "Quick style quiz" },
-      { id: "listing_faqs",      title: "FAQs",                description: "Sizes, payments, returns" },
-      { id: "listing_expert",    title: "Talk to a jewellery expert", description: "Schedule a chat with our gemologist" },
-      { id: "listing_design",    title: "Share my design",     description: "Send us a sketch / photo" },
-      { id: "listing_human",     title: "Talk to a human",     description: "Schedule a chat with us" },
+      { id: "listing_faqs",   title: "FAQs",                       description: "Sizes, payments, returns" },
+      { id: "listing_expert", title: "Talk to a jewellery expert", description: "Schedule a chat with our gemologist" },
+      { id: "listing_design", title: "Share my design",            description: "Send us a sketch / photo" },
+      { id: "listing_human",  title: "Talk to a human",            description: "Schedule a chat with us" },
     ],
   });
 }
@@ -463,11 +424,6 @@ async function handleListReply(to, rowId, rowTitle) {
     return sendStaticInfo(to,
       "Our return promise:\n• 14-day full refund — every piece, no questions\n• Free insured pickup\n• Refund to original payment method within 7 business days",
       "Full refund policy", "https://mycarat.in/policies/refund-policy");
-  }
-
-  // FLOW actions — find-something
-  if (rowId === "home_help_find" || rowId === "listing_help_find") {
-    return sendFlow(to);
   }
 
   // FLOW actions — scheduling (the universal "talk to human / expert" flow)
@@ -696,43 +652,6 @@ async function handleSchedulingFlowCompletion(waNumber, payload) {
   );
 }
 
-// ── Build filtered collection URL ────────────────────────────────────────────
-function buildCollectionUrl(category, budget, diamondStyle) {
-  const base = category && category !== "surprise"
-    ? `https://mycarat.in/collections/all-${category}`
-    : "https://mycarat.in/collections/all";
-
-  const params = new URLSearchParams();
-  if (budget && budget !== "skip")                      params.set("price", budget);
-  if (diamondStyle && diamondStyle !== "no-preference") params.set("style", diamondStyle === "solitaire" ? "solitaire" : "");
-
-  const qs = params.toString();
-  return qs ? `${base}?${qs}` : base;
-}
-
-// ── Build reply message ───────────────────────────────────────────────────────
-function buildReplyMessage(category, budget, collectionUrl, agentFollowup) {
-  const categoryLabel = category && category !== "surprise"
-    ? category.charAt(0).toUpperCase() + category.slice(1)
-    : "jewellery";
-
-  let msg = `Thank you so much! 🥰 We loved learning what you're looking for.\n\n`;
-
-  if (budget && budget !== "skip") {
-    msg += `Here's a curated selection of ${categoryLabel} in your budget 💎\n${collectionUrl}\n\n`;
-  } else {
-    msg += `Here's our ${categoryLabel} collection for you to explore ✨\n${collectionUrl}\n\n`;
-  }
-
-  if (agentFollowup) {
-    msg += `One of our jewellery experts will reach out to you shortly with personalised picks 🌟`;
-  } else {
-    msg += `Feel free to ask us anything — we're always here to help! 💛`;
-  }
-
-  return msg;
-}
-
 // ── Send welcome message ──────────────────────────────────────────────────────
 async function sendWelcomeMessage(to) {
   const payload = {
@@ -746,37 +665,9 @@ async function sendWelcomeMessage(to) {
       },
       action: {
         buttons: [
-          { type: "reply", reply: { id: "find_something", title: "Find something 💍" } },
+          { type: "reply", reply: { id: "show_home_menu", title: "Show me options 💍" } },
           { type: "reply", reply: { id: "have_question",  title: "I have a question" } },
         ],
-      },
-    },
-  };
-  await sendToMeta(payload);
-}
-
-// ── Send flow trigger message ─────────────────────────────────────────────────
-async function sendFlow(to) {
-  const payload = {
-    messaging_product: "whatsapp",
-    to,
-    type: "interactive",
-    interactive: {
-      type: "flow",
-      body: {
-        text: "Let's find the perfect piece for you! ✨\n\nAnswer a few quick questions and we'll curate picks just for you.",
-      },
-      action: {
-        name: "flow",
-        parameters: {
-          flow_message_version: "3",
-          flow_id:     FLOW_ID_FIND,
-          flow_cta:    "Let's go! 💍",
-          flow_action: "navigate",
-          flow_action_payload: {
-            screen: "CATEGORY",
-          },
-        },
       },
     },
   };
