@@ -116,6 +116,38 @@ any purchase.
 | `ADMIN_SECRET` | Shared secret for `GET/POST /api/admin/schedules*` (X-Admin-Secret header) |
 | `CRON_SECRET` | Shared secret for `POST /api/cron/send-reminders` external triggers |
 | `WA_FLOW_ID_PROFILE` | Flow ID for `mc_profile_v1` (set after publish in Meta WhatsApp Manager). Webhook detects profile-flow completions by `payload.flow === "mc_profile_v1"`, so this env var is only used if/when we add a code-driven Flow trigger (today the Flow opens directly via the `goldback_welcome` template's Flow button). |
+| `WA_WALLET_TOKEN_SECRET` | Optional HMAC secret for signing the magic-link wallet tokens (Phase 2.5). Falls back to `SUPABASE_SERVICE_ROLE_KEY` if unset — fine for now but set a dedicated 32+ byte random string for prod rotation hygiene. |
+
+## Magic-link wallet (Phase 2.5)
+
+The `goldback_welcome` and `goldback_credited` templates' "Open my wallet"
+URL buttons use a **dynamic-URL** pattern so each customer lands on the
+wallet page with a signed token that grants their data without needing a
+Supabase web session (WA's in-app browser has its own cookie jar).
+
+**Template URL** (set in WhatsApp Manager → Edit → URL button):
+```
+https://mycarat.in/pages/goldback-wallet?token={{1}}
+```
+
+**Send-time**: `sendGoldbackWelcomeTemplate` and `sendGoldbackCreditedTemplate`
+in `app/utils/wa-scheduler.server.js` call `signWalletToken(userId)` and emit
+a `type: "button" sub_type: "url"` component carrying the token as `{{1}}`.
+
+**Storefront**: `sections/mycarat-account-goldback-wallet.liquid` in the
+theme reads `?token=` on page load; if present, it calls
+`GET /api/wallet-by-token?token=…` on the Fly app instead of relying on
+`sb.auth.getSession()`. Token verification + read-only data assembly lives
+in `app/routes/api.wallet-by-token.jsx`.
+
+**Token TTL**: 24 hours. Format: `<base64url-payload>.<base64url-hmac>`,
+payload = `{ u: user_id, e: expiry_unix_ms }`. Validation is constant-time
+and never throws.
+
+**When templates aren't yet edited to dynamic-URL**: the send call still
+includes the URL-button parameter, but Meta drops it (static URL ignores
+extra params). Wallet page sees no `?token=` and falls back to the
+existing Supabase-session flow.
 
 ## Admin endpoints quick reference
 

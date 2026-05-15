@@ -113,7 +113,7 @@ async function handleIncomingMessage(msg, contact) {
   // Template survives the 24h-window restriction and includes the
   // "Earn +50 GC" Flow trigger that opens mc_profile_v1.
   if (leadResult.isNew) {
-    await sendGoldbackWelcomeTemplate(from, waName, SIGNUP_GC).catch(err =>
+    await sendGoldbackWelcomeTemplate(from, waName, SIGNUP_GC, leadResult.userId).catch(err =>
       console.error("[WA] goldback_welcome template send failed:", err)
     );
   }
@@ -675,6 +675,7 @@ async function handleProfileFlowCompletion(waNumber, payload) {
       totalAwarded,
       "for completing your profile",
       newBalance,
+      userId,
     ).catch(err => console.error("[profile-flow] credited template send failed:", err));
   } else {
     await sendTextMessage(waNumber, "Your profile is already complete — we have your 50 Gold Coins on file. 💛");

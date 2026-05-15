@@ -243,6 +243,7 @@ async function processOrder(order) {
       coins,
       `for your order ${orderNumber}`,
       newBalance,
+      userId,
     ).catch(err => console.error("[webhook] goldback_credited template send failed:", err));
   }
 }

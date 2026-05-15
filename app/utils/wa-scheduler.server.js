@@ -15,6 +15,7 @@
  */
 
 import { supabase } from "../supabase.server";
+import { signWalletToken } from "./wallet-token.server";
 
 const ACCESS_TOKEN    = process.env.WA_ACCESS_TOKEN;
 const PHONE_NUMBER_ID = process.env.WA_PHONE_NUMBER_ID;
@@ -238,13 +239,49 @@ export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
  * @param {string} waName — display name from contact, may be null
  * @param {number|string} balance — current GC balance shown in body
  */
-export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
+/**
+ * @param {string} userId — optional. If provided, generates a wallet-token
+ *   parameter for the URL button (magic-link auto-login on the wallet page).
+ *   Pass null to skip the URL button component — Meta will fall back to the
+ *   static URL configured on the template.
+ */
+export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance, userId = null) {
   // Template is registered under the "Flows" Utility sub-type. The send call
   // MUST include the Flow button component (sub_type "flow") with a
   // flow_token — even though our routing keys off payload.flow inside the
   // Flow JSON. Without it Meta returns error 131009 "Components sub_type
   // invalid at index: 0".
   const flowToken = `mc_profile_welcome_${Date.now()}`;
+  const components = [
+    {
+      type: "body",
+      parameters: [
+        { type: "text", parameter_name: "customer_name", text: waName || "there" },
+        { type: "text", parameter_name: "balance",       text: String(balance) },
+      ],
+    },
+    {
+      type:     "button",
+      sub_type: "flow",
+      index:    "0",
+      parameters: [
+        { type: "action", action: { flow_token: flowToken } },
+      ],
+    },
+  ];
+  // URL button (index 1) — dynamic-URL parameter for magic-link wallet.
+  // Only emitted when userId is provided AND the template has been edited
+  // to use a dynamic suffix (https://mycarat.in/pages/goldback-wallet?token={{1}}).
+  if (userId) {
+    components.push({
+      type:     "button",
+      sub_type: "url",
+      index:    "1",
+      parameters: [
+        { type: "text", text: signWalletToken(userId) },
+      ],
+    });
+  }
   const payload = {
     messaging_product: "whatsapp",
     to: waPhone.replace(/^\+/, ""),
@@ -252,23 +289,7 @@ export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
     template: {
       name: "goldback_welcome",
       language: { code: "en" },
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", parameter_name: "customer_name", text: waName || "there" },
-            { type: "text", parameter_name: "balance",       text: String(balance) },
-          ],
-        },
-        {
-          type:     "button",
-          sub_type: "flow",
-          index:    "0",
-          parameters: [
-            { type: "action", action: { flow_token: flowToken } },
-          ],
-        },
-      ],
+      components,
     },
   };
   return sendToMeta(payload);
@@ -284,9 +305,33 @@ export async function sendGoldbackWelcomeTemplate(waPhone, waName, balance) {
  *                          "for your order #1234", etc.)
  * @param {number|string} balance — new total balance after credit
  */
-export async function sendGoldbackCreditedTemplate(waPhone, waName, coinsAdded, reason, balance) {
+/**
+ * @param {string} userId — optional. If provided, emits a URL-button parameter
+ *   with a signed wallet token (magic-link auto-login). Skip when the
+ *   template's URL button is static (no {{n}} suffix configured yet).
+ */
+export async function sendGoldbackCreditedTemplate(waPhone, waName, coinsAdded, reason, balance, userId = null) {
   // Numbered parameters — goldback_credited is registered under the
   // Default Utility sub-type which requires {{1}}, {{2}}... format.
+  const components = [{
+    type: "body",
+    parameters: [
+      { type: "text", text: waName || "there" },
+      { type: "text", text: String(coinsAdded) },
+      { type: "text", text: reason || "as a thank-you" },
+      { type: "text", text: String(balance) },
+    ],
+  }];
+  if (userId) {
+    components.push({
+      type:     "button",
+      sub_type: "url",
+      index:    "0",
+      parameters: [
+        { type: "text", text: signWalletToken(userId) },
+      ],
+    });
+  }
   const payload = {
     messaging_product: "whatsapp",
     to: waPhone.replace(/^\+/, ""),
@@ -294,15 +339,7 @@ export async function sendGoldbackCreditedTemplate(waPhone, waName, coinsAdded, 
     template: {
       name: "goldback_credited",
       language: { code: "en" },
-      components: [{
-        type: "body",
-        parameters: [
-          { type: "text", text: waName || "there" },
-          { type: "text", text: String(coinsAdded) },
-          { type: "text", text: reason || "as a thank-you" },
-          { type: "text", text: String(balance) },
-        ],
-      }],
+      components,
     },
   };
   return sendToMeta(payload);
