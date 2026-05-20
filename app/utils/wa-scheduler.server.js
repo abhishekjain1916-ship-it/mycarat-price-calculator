@@ -114,9 +114,19 @@ export function normalizeScheduledAt(dateStr, timeStr) {
 
 /**
  * Save a schedule + send confirmation template + email ops.
- * `flowPayload` is the parsed JSON from the Meta Flow submit.
+ * `payload` is the user-submitted slot data (mode + date + time + notes).
+ * Optional `channel` = 'whatsapp' (default) or 'web'.
+ * Optional `customerId` short-circuits the wa_phone-based lookup — pass it
+ * directly when the caller already has the authenticated Supabase user_id.
  */
-export async function createSchedule({ waPhone, waName, payload, triggerContext }) {
+export async function createSchedule({
+  waPhone,
+  waName,
+  payload,
+  triggerContext,
+  channel = "whatsapp",
+  customerId: providedCustomerId = null,
+}) {
   const mode = (payload.mode || "").trim();
   if (!VALID_MODES.has(mode)) {
     return { ok: false, error: "Please pick a valid contact mode." };
@@ -127,8 +137,8 @@ export async function createSchedule({ waPhone, waName, payload, triggerContext 
 
   const { scheduledAtUtc } = v;
 
-  // Try to attach customer_id by matching wa_phone (best-effort)
-  const customerId = await lookupCustomerId(waPhone);
+  // Use the supplied customer_id (web/auth path) or fall back to phone lookup
+  const customerId = providedCustomerId || (await lookupCustomerId(waPhone));
 
   const { data: row, error } = await supabase
     .from("wa_schedules")
@@ -140,6 +150,7 @@ export async function createSchedule({ waPhone, waName, payload, triggerContext 
       preferred_mode:  mode,
       scheduled_at:    scheduledAtUtc.toISOString(),
       notes:           (payload.notes || "").trim() || null,
+      channel,
     })
     .select()
     .single();
