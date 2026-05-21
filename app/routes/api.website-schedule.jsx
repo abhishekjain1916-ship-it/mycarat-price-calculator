@@ -16,7 +16,13 @@
  *     time:     'HH:MM'  required, 24h IST
  *     topic:    string  optional — card label (e.g. "Fine Jewellery")
  *     note:     string  optional — extra user message
+ *     file_url: string  optional — public Supabase Storage URL (Initiate
+ *                                   Exchange / Upload Design)
  *   }
+ *
+ * If topic is in {Visit Boutique, Initiate Exchange, Upload Design} we treat
+ * the row as a lead (rep will coordinate the call manually) and skip the
+ * "Your call is scheduled for..." WhatsApp confirmation template.
  *
  * Header (optional):
  *   Authorization: Bearer <supabase access_token>
@@ -87,14 +93,15 @@ export const action = async ({ request }) => {
     return json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const name  = String(body.name  || "").trim();
-  const phone = normalizePhone(body.phone);
-  const email = String(body.email || "").trim() || null;
-  const mode  = String(body.mode  || "").trim();
-  const date  = String(body.date  || "").trim();
-  const time  = String(body.time  || "").trim();
-  const topic = String(body.topic || "").trim();
-  const note  = String(body.note  || "").trim();
+  const name    = String(body.name    || "").trim();
+  const phone   = normalizePhone(body.phone);
+  const email   = String(body.email   || "").trim() || null;
+  const mode    = String(body.mode    || "").trim();
+  const date    = String(body.date    || "").trim();
+  const time    = String(body.time    || "").trim();
+  const topic   = String(body.topic   || "").trim();
+  const note    = String(body.note    || "").trim();
+  const fileUrl = String(body.file_url || "").trim() || null;
 
   if (!name)  return json({ ok: false, error: "Please enter your name." }, { status: 400 });
   if (!phone) return json({ ok: false, error: "Please enter a valid phone (10 digits or +91…)." }, { status: 400 });
@@ -103,11 +110,22 @@ export const action = async ({ request }) => {
 
   const customerId = await resolveCustomerId(request);
 
-  // Compose notes: topic prefix + free-text + email (if any)
+  // Lead-gen flows: rep coordinates the call by hand, so suppress the
+  // "Your call is scheduled for..." WhatsApp template. Talk to Experts
+  // stays on the appointment path and fires the template as before.
+  const LEAD_ONLY_TOPICS = new Set([
+    "Visit Boutique",
+    "Initiate Exchange",
+    "Upload Design",
+  ]);
+  const isLeadOnly = LEAD_ONLY_TOPICS.has(topic);
+
+  // Compose notes: topic prefix + free-text + email + file URL (if any)
   const noteParts = [];
-  if (topic) noteParts.push(`Topic: ${topic}`);
-  if (note)  noteParts.push(note);
-  if (email) noteParts.push(`Email: ${email}`);
+  if (topic)   noteParts.push(`Topic: ${topic}`);
+  if (note)    noteParts.push(note);
+  if (email)   noteParts.push(`Email: ${email}`);
+  if (fileUrl) noteParts.push(`File: ${fileUrl}`);
   const composedNotes = noteParts.join(" · ") || null;
 
   const result = await createSchedule({
@@ -115,12 +133,14 @@ export const action = async ({ request }) => {
     waName:   name,
     payload:  { mode, date, time, notes: composedNotes },
     triggerContext: {
-      source: "website",
+      source:   "website",
       topic,
       email,
+      file_url: fileUrl,
     },
     channel:    "web",
     customerId,
+    skipConfirmationTemplate: isLeadOnly,
   });
 
   if (!result.ok) {

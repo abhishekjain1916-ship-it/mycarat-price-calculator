@@ -126,6 +126,7 @@ export async function createSchedule({
   triggerContext,
   channel = "whatsapp",
   customerId: providedCustomerId = null,
+  skipConfirmationTemplate = false,
 }) {
   const mode = (payload.mode || "").trim();
   if (!VALID_MODES.has(mode)) {
@@ -164,11 +165,17 @@ export async function createSchedule({
     return { ok: false, error: "Could not save your schedule. Please try again." };
   }
 
-  // Fire-and-forget side effects
-  await sendConfirmationTemplate(waPhone, waName, mode, scheduledAtUtc).catch(err =>
-    console.error("[wa-scheduler] confirmation template failed:", err)
-  );
-  await markConfirmationSent(row.id);
+  // Fire-and-forget side effects.
+  // skipConfirmationTemplate=true for non-appointment lead flows (Visit
+  // Boutique / Initiate Exchange / Upload Design), where the rep coordinates
+  // the call manually — sending a "Your call is scheduled for..." template
+  // would be misleading.
+  if (!skipConfirmationTemplate) {
+    await sendConfirmationTemplate(waPhone, waName, mode, scheduledAtUtc).catch(err =>
+      console.error("[wa-scheduler] confirmation template failed:", err)
+    );
+    await markConfirmationSent(row.id);
+  }
   await emailOps(row).catch(err =>
     console.error("[wa-scheduler] ops email failed:", err)
   );
