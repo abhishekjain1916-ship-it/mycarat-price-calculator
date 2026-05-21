@@ -262,6 +262,46 @@ export async function sendLeadReceivedTemplate(waPhone, waName, topicPhrase) {
   return sendToMeta(payload);
 }
 
+/**
+ * lead_alert_admin — fires to the business owner's WhatsApp whenever a
+ * website lead lands. Mirrors the Resend ops-email path so leads surface
+ * on the phone too. Skipped silently if OPS_WA_PHONE is unset.
+ *
+ * Template body (en):
+ *   New lead — {{1}} ({{2}}). Topic: {{3}}. Note: {{4}}.
+ *
+ * @param {string} customerName  — {{1}}
+ * @param {string} customerPhone — {{2}}, E.164
+ * @param {string} topic         — {{3}}, e.g. "Visit Boutique"
+ * @param {string} note          — {{4}}, free-text context (or "—" if empty)
+ */
+export async function sendLeadAdminAlertTemplate(customerName, customerPhone, topic, note) {
+  const opsPhone = process.env.OPS_WA_PHONE;
+  if (!opsPhone) {
+    console.warn("[wa-scheduler] OPS_WA_PHONE not set — skipping admin alert");
+    return;
+  }
+  const payload = {
+    messaging_product: "whatsapp",
+    to: opsPhone.replace(/^\+/, ""),
+    type: "template",
+    template: {
+      name: "lead_alert_admin",
+      language: { code: "en" },
+      components: [{
+        type: "body",
+        parameters: [
+          { type: "text", text: customerName  || "(no name)" },
+          { type: "text", text: customerPhone || "(no phone)" },
+          { type: "text", text: topic         || "(no topic)" },
+          { type: "text", text: (note && note.trim()) || "—" },
+        ],
+      }],
+    },
+  };
+  return sendToMeta(payload);
+}
+
 export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
   const payload = {
     messaging_product: "whatsapp",

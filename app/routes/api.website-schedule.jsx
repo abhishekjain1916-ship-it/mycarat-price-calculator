@@ -39,6 +39,7 @@ import {
   createSchedule,
   formatIstDatetime,
   sendLeadReceivedTemplate,
+  sendLeadAdminAlertTemplate,
 } from "../utils/wa-scheduler.server";
 
 // Phrases used in the lead_received WA template ({{2}} parameter). Keys
@@ -237,9 +238,12 @@ export const action = async ({ request }) => {
     return json({ ok: false, error: result.error }, { status: 400 });
   }
 
-  // Lead flows: fire the generic lead_received template (fire-and-forget).
+  // Lead flows: fire two WA templates (fire-and-forget).
+  //   - lead_received     → customer's WA (the ack)
+  //   - lead_alert_admin  → business owner's WA (operator alert)
   // schedule_confirmed was already suppressed inside createSchedule via
-  // skipConfirmationTemplate, so this is the only WA message they get.
+  // skipConfirmationTemplate, so lead_received is the only WA message
+  // the customer gets.
   if (isLeadOnly) {
     sendLeadReceivedTemplate(
       phone,
@@ -247,6 +251,16 @@ export const action = async ({ request }) => {
       LEAD_TOPIC_PHRASE[topic] || "your inquiry",
     ).catch(err =>
       console.error("[website-schedule] lead_received template failed:", err)
+    );
+
+    // Admin alert payload: pass the user's free-text note plus the file
+    // URL (if any) so the operator has full context before calling back.
+    const adminParts = [];
+    if (note)    adminParts.push(note);
+    if (fileUrl) adminParts.push(`File: ${fileUrl}`);
+    const adminNote = adminParts.join(" · ");
+    sendLeadAdminAlertTemplate(name, phone, topic, adminNote).catch(err =>
+      console.error("[website-schedule] lead_alert_admin template failed:", err)
     );
   }
 
