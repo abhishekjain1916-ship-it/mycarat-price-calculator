@@ -227,6 +227,41 @@ async function sendConfirmationTemplate(waPhone, waName, mode, scheduledAtUtc) {
   return sendToMeta(payload);
 }
 
+/**
+ * lead_received — fired for website lead flows (Visit Boutique / Initiate
+ * Exchange / Upload Design) where the rep coordinates the actual call by
+ * hand. Generic ack so the user has something in WhatsApp + the 24-hour
+ * reply window opens for the rep.
+ *
+ * Template body (en):
+ *   Hi {{1}}, thanks for reaching out about {{2}}. We've got your details
+ *   and our team will WhatsApp or call you within the day to take this
+ *   forward. — Team My Carat
+ *
+ * @param {string} waPhone     — E.164 ("+91...")
+ * @param {string} waName      — display name, may be null
+ * @param {string} topicPhrase — e.g. "your boutique visit"
+ */
+export async function sendLeadReceivedTemplate(waPhone, waName, topicPhrase) {
+  const payload = {
+    messaging_product: "whatsapp",
+    to: waPhone.replace(/^\+/, ""),
+    type: "template",
+    template: {
+      name: "lead_received",
+      language: { code: "en" },
+      components: [{
+        type: "body",
+        parameters: [
+          { type: "text", text: waName || "there" },
+          { type: "text", text: topicPhrase || "your inquiry" },
+        ],
+      }],
+    },
+  };
+  return sendToMeta(payload);
+}
+
 export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
   const payload = {
     messaging_product: "whatsapp",

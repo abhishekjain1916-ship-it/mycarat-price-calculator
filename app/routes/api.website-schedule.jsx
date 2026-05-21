@@ -35,7 +35,19 @@
  */
 
 import { supabase } from "../supabase.server";
-import { createSchedule, formatIstDatetime } from "../utils/wa-scheduler.server";
+import {
+  createSchedule,
+  formatIstDatetime,
+  sendLeadReceivedTemplate,
+} from "../utils/wa-scheduler.server";
+
+// Phrases used in the lead_received WA template ({{2}} parameter). Keys
+// must match LEAD_ONLY_TOPICS exactly.
+const LEAD_TOPIC_PHRASE = {
+  "Visit Boutique":    "your boutique visit",
+  "Initiate Exchange": "your exchange inquiry",
+  "Upload Design":     "your design submission",
+};
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin":  "*",
@@ -223,6 +235,19 @@ export const action = async ({ request }) => {
 
   if (!result.ok) {
     return json({ ok: false, error: result.error }, { status: 400 });
+  }
+
+  // Lead flows: fire the generic lead_received template (fire-and-forget).
+  // schedule_confirmed was already suppressed inside createSchedule via
+  // skipConfirmationTemplate, so this is the only WA message they get.
+  if (isLeadOnly) {
+    sendLeadReceivedTemplate(
+      phone,
+      name,
+      LEAD_TOPIC_PHRASE[topic] || "your inquiry",
+    ).catch(err =>
+      console.error("[website-schedule] lead_received template failed:", err)
+    );
   }
 
   return json({
