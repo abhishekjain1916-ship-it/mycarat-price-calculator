@@ -76,6 +76,57 @@ async function resolveCustomerId(request) {
   }
 }
 
+/**
+ * For lead-only topics where we synthesize scheduled_at on behalf of the
+ * user, walk forward 30 minutes per collision (the wa_schedules unique
+ * index on phone + scheduled_at fires error 23505). Cap at MAX_RETRIES
+ * which covers ~3 working days of slots — comfortably beyond any plausible
+ * test or rapid-submit scenario.
+ */
+async function createWithLeadRetry({
+  waPhone, waName, startDate, startTime, notes, triggerContext, customerId,
+}) {
+  const MAX_RETRIES = 60;
+  const WORK_START_H = 11;
+  const WORK_END_H   = 20;
+  const WORK_END_M   = 30;
+  const pad = (n) => String(n).padStart(2, "0");
+
+  let date = startDate;
+  let time = startTime;
+
+  for (let i = 0; i <= MAX_RETRIES; i++) {
+    const result = await createSchedule({
+      waPhone, waName,
+      payload: { mode: "call", date, time, notes },
+      triggerContext,
+      channel: "web",
+      customerId,
+      skipConfirmationTemplate: true,
+    });
+    if (result.ok) return result;
+
+    // Only loop on the unique-collision message. Surface anything else.
+    if (!result.error || !/already have a slot/i.test(result.error)) {
+      return result;
+    }
+
+    // Bump 30 minutes; roll to next day's 11:00 if past 20:30 IST.
+    let [h, m] = time.split(":").map(Number);
+    m += 30;
+    if (m >= 60) { h += 1; m = 0; }
+    if (h > WORK_END_H || (h === WORK_END_H && m > WORK_END_M)) {
+      const [y, mo, d] = date.split("-").map(Number);
+      const next = new Date(Date.UTC(y, mo - 1, d) + 86400000);
+      date = `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
+      h = WORK_START_H;
+      m = 0;
+    }
+    time = `${pad(h)}:${pad(m)}`;
+  }
+  return { ok: false, error: "Couldn't reserve a slot just now. Please WhatsApp us directly." };
+}
+
 export const loader = ({ request }) => {
   // Remix routes OPTIONS to the loader (not the action). Handle the CORS
   // preflight here so cross-origin POSTs from the storefront succeed.
@@ -135,20 +186,40 @@ export const action = async ({ request }) => {
   if (fileUrl) noteParts.push(`File: ${fileUrl}`);
   const composedNotes = noteParts.join(" · ") || null;
 
-  const result = await createSchedule({
-    waPhone:  phone,
-    waName:   name,
-    payload:  { mode, date, time, notes: composedNotes },
-    triggerContext: {
-      source:   "website",
-      topic,
-      email,
-      file_url: fileUrl,
-    },
-    channel:    "web",
-    customerId,
-    skipConfirmationTemplate: isLeadOnly,
-  });
+  // For lead-only topics, the user didn't pick a time — we did. If the
+  // synthesized slot collides with an existing row for the same phone
+  // (e.g. user submitted multiple lead flows back-to-back), bump 30
+  // minutes and retry transparently. For Talk to Experts we still
+  // surface the collision since the user picked the slot deliberately.
+  const result = isLeadOnly
+    ? await createWithLeadRetry({
+        waPhone: phone,
+        waName:  name,
+        startDate: date,
+        startTime: time,
+        notes: composedNotes,
+        triggerContext: {
+          source:   "website",
+          topic,
+          email,
+          file_url: fileUrl,
+        },
+        customerId,
+      })
+    : await createSchedule({
+        waPhone:  phone,
+        waName:   name,
+        payload:  { mode, date, time, notes: composedNotes },
+        triggerContext: {
+          source:   "website",
+          topic,
+          email,
+          file_url: fileUrl,
+        },
+        channel:    "web",
+        customerId,
+        skipConfirmationTemplate: false,
+      });
 
   if (!result.ok) {
     return json({ ok: false, error: result.error }, { status: 400 });
