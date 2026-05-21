@@ -76,7 +76,14 @@ async function resolveCustomerId(request) {
   }
 }
 
-export const loader = () => json({ error: "Use POST" }, { status: 405 });
+export const loader = ({ request }) => {
+  // Remix routes OPTIONS to the loader (not the action). Handle the CORS
+  // preflight here so cross-origin POSTs from the storefront succeed.
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+  return json({ error: "Use POST" }, { status: 405 });
+};
 
 export const action = async ({ request }) => {
   if (request.method === "OPTIONS") {
