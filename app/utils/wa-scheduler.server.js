@@ -276,30 +276,32 @@ export async function sendLeadReceivedTemplate(waPhone, waName, topicPhrase) {
  * @param {string} note          — {{4}}, free-text context (or "—" if empty)
  */
 export async function sendLeadAdminAlertTemplate(customerName, customerPhone, topic, note) {
-  const opsPhone = process.env.OPS_WA_PHONE;
-  if (!opsPhone) {
+  // OPS_WA_PHONE may be a single phone or a comma-separated list — every
+  // listed phone receives an identical lead_alert_admin message.
+  const opsPhones = (process.env.OPS_WA_PHONE || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  if (opsPhones.length === 0) {
     console.warn("[wa-scheduler] OPS_WA_PHONE not set — skipping admin alert");
     return;
   }
-  const payload = {
+  const components = [{
+    type: "body",
+    parameters: [
+      { type: "text", text: customerName  || "(no name)" },
+      { type: "text", text: customerPhone || "(no phone)" },
+      { type: "text", text: topic         || "(no topic)" },
+      { type: "text", text: (note && note.trim()) || "—" },
+    ],
+  }];
+  // Promise.allSettled so one bad recipient doesn't block the rest.
+  return Promise.allSettled(opsPhones.map(phone => sendToMeta({
     messaging_product: "whatsapp",
-    to: opsPhone.replace(/^\+/, ""),
+    to: phone.replace(/^\+/, ""),
     type: "template",
-    template: {
-      name: "lead_alert_admin",
-      language: { code: "en" },
-      components: [{
-        type: "body",
-        parameters: [
-          { type: "text", text: customerName  || "(no name)" },
-          { type: "text", text: customerPhone || "(no phone)" },
-          { type: "text", text: topic         || "(no topic)" },
-          { type: "text", text: (note && note.trim()) || "—" },
-        ],
-      }],
-    },
-  };
-  return sendToMeta(payload);
+    template: { name: "lead_alert_admin", language: { code: "en" }, components },
+  })));
 }
 
 export async function sendReminderTemplate(waPhone, waName, scheduledAtUtc) {
