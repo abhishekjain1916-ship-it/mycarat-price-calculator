@@ -569,6 +569,15 @@ async function writeProductResults(product_id, priceCache, deltas) {
   const individualDeltas = deltas.filter(d => d.component !== "solitaire_combined");
   const combinedDeltas   = deltas.filter(d => d.component === "solitaire_combined");
 
+  // Safety guard: never wipe an existing cache if this run produced 0 deltas.
+  // Without this, a transient failure (missing rate, network blip) would delete
+  // the working cache and leave all tier prices looking identical on the storefront.
+  if (deltas.length === 0) {
+    console.warn(`[RecalcCache] 0 deltas computed for ${product_id} — preserving existing cache`);
+    invalidateCache(product_id);
+    return true;
+  }
+
   await supabase.from("product_delta_cache").delete().eq("product_id", product_id);
 
   const { error: indivErr } = await supabase.from("product_delta_cache").insert(individualDeltas);
