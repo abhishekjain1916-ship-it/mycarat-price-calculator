@@ -74,10 +74,15 @@ async function fetchPreloaded(productIds) {
   // null means "fetch all products" (bulk mode — avoids oversized URL in .in() filter)
   const ids = productIds === null ? null : (Array.isArray(productIds) ? productIds : [productIds]);
 
-  // Build spec queries — filter by product_id in single-product mode, fetch all in bulk mode
-  const specQuery = (table, columns) => {
-    const q = supabase.from(table).select(columns).limit(10000);
-    return ids !== null ? q.in("product_id", ids) : q;
+  // Build spec queries — filter by product_id in single-product mode, paginate all in bulk mode.
+  // Bulk mode previously used limit(10000) which silently drops products when total spec rows
+  // exceed 10k — causing those products to produce 0 deltas and wipe their cache.
+  const specQuery = async (table, columns) => {
+    const q = supabase.from(table).select(columns);
+    if (ids !== null) return q.in("product_id", ids).limit(10000);
+    // Bulk: paginate like solitaire_rates_core to avoid the 10k cap
+    const rows = await fetchAllRows(q);
+    return { data: rows, error: null };
   };
 
   const [
