@@ -628,15 +628,16 @@ export const action = async ({ request }) => {
   // ── Bulk mode: recalculate ALL products in one pass ──────────────────────
   if (body.all) {
     try {
-      const { data: metalSpecs, error: specErr } = await supabase
-        .from("product_specs_metal")
-        .select("product_id")
-        .limit(10000);
-
-      if (specErr) return json({ success: false, error: specErr.message });
-
-      const allIds = [...new Set((metalSpecs || []).map(r => r.product_id))];
-      if (allIds.length === 0) return json({ success: false, error: "No products found in product_specs_metal" });
+      // Union all spec tables so products missing from product_specs_metal
+      // (e.g. solitaire-only products) are never silently skipped.
+      const specTables = ["product_specs_metal", "product_specs_solitaires", "product_specs_diamonds", "product_specs_gemstones"];
+      const allIdsSet = new Set();
+      for (const table of specTables) {
+        const { data } = await supabase.from(table).select("product_id").limit(10000);
+        (data || []).forEach(r => allIdsSet.add(r.product_id));
+      }
+      const allIds = [...allIdsSet];
+      if (allIds.length === 0) return json({ success: false, error: "No products found in any spec table" });
 
       const preloaded = await fetchPreloaded(null); // null = fetch all specs without filter
 
