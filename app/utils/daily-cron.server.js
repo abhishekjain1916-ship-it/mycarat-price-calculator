@@ -7,6 +7,8 @@
  * Runs in-process on Fly.io (auto_stop_machines = false keeps the machine alive).
  */
 
+import { supabase } from "../supabase.server";
+
 let started = false;
 
 export function startDailyCron() {
@@ -18,8 +20,10 @@ export function startDailyCron() {
   const mm = Math.floor((delay % 3_600_000) / 60_000);
   console.log(`[DailyCron] Scheduled — next rebuild in ${hh}h ${mm}m (10:00 AM IST)`);
 
-  setTimeout(function fire() {
-    runBulkRebuild();
+  setTimeout(async function fire() {
+    await runBulkRebuild();
+    // Self-healing pass: find and fix any products that still have 0 deltas after bulk rebuild
+    await healZeroDeltas();
     // Schedule next run exactly 24 hours later
     setTimeout(fire, 24 * 60 * 60 * 1000);
   }, delay);
@@ -59,5 +63,60 @@ async function runBulkRebuild() {
     }
   } catch (err) {
     console.error("[DailyCron] Rebuild error:", err.message);
+  }
+}
+
+// ── Self-healing: re-run recalc for any product with 0 cached deltas ─────────
+// Catches products missed by the bulk pass (not in product_specs_metal) and any
+// whose cache was preserved-but-empty by the zero-delta guard.
+async function healZeroDeltas() {
+  try {
+    // Collect all product IDs from every spec table
+    const specTables = ["product_specs_metal", "product_specs_solitaires", "product_specs_diamonds", "product_specs_gemstones"];
+    const allIdsSet = new Set();
+    for (const table of specTables) {
+      const { data } = await supabase.from(table).select("product_id").limit(10000);
+      (data || []).forEach(r => allIdsSet.add(r.product_id));
+    }
+
+    // Find which products have at least one delta row
+    const { data: cachedRows } = await supabase
+      .from("product_delta_cache")
+      .select("product_id")
+      .limit(50000);
+    const cachedIds = new Set((cachedRows || []).map(r => r.product_id));
+
+    // Products with no cached deltas at all
+    const missing = [...allIdsSet].filter(id => !cachedIds.has(id));
+    if (missing.length === 0) {
+      console.log("[DailyCron] Self-heal: all products have cached deltas ✓");
+      return;
+    }
+
+    console.log(`[DailyCron] Self-heal: ${missing.length} products with 0 deltas — re-running recalc`);
+    const secret  = process.env.RECALCULATE_SECRET;
+    const headers = { "Content-Type": "application/json" };
+    if (secret) headers["x-recalc-secret"] = secret;
+
+    let fixed = 0;
+    for (const pid of missing) {
+      try {
+        const res = await fetch("http://localhost:3000/api/recalculate-cache", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ product_id: pid, trigger: "heal" }),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          if (d.deltas_calculated > 0) fixed++;
+          else console.warn(`[DailyCron] Self-heal: still 0 deltas for ${pid}`);
+        }
+      } catch (e) {
+        console.error(`[DailyCron] Self-heal error for ${pid}:`, e.message);
+      }
+    }
+    console.log(`[DailyCron] Self-heal complete — ${fixed}/${missing.length} products fixed`);
+  } catch (err) {
+    console.error("[DailyCron] Self-heal error:", err.message);
   }
 }
