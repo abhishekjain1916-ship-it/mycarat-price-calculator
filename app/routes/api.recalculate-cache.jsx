@@ -583,6 +583,17 @@ async function writeProductResults(product_id, priceCache, deltas) {
     return true;
   }
 
+  // Secondary guard: if the product has solitaire specs but ALL solitaire_combined
+  // deltas are 0, the solitaire rate lookup failed completely (weight_range missing from
+  // solitaire_rates_core). Preserve existing cache rather than replacing correct tier
+  // prices with all-zero deltas — which makes every tier card show the same base price.
+  const isRateMiss = combinedDeltas.length > 0 && combinedDeltas.every(d => d.delta_amount === 0);
+  if (isRateMiss) {
+    console.warn(`[RecalcCache] All ${combinedDeltas.length} solitaire_combined deltas = 0 for ${product_id} — rate miss, preserving existing cache`);
+    invalidateCache(product_id);
+    return true;
+  }
+
   await supabase.from("product_delta_cache").delete().eq("product_id", product_id);
 
   const { error: indivErr } = await supabase.from("product_delta_cache").insert(individualDeltas);
