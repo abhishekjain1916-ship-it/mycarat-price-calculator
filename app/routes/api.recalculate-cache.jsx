@@ -583,15 +583,30 @@ async function writeProductResults(product_id, priceCache, deltas) {
     return true;
   }
 
-  // Secondary guard: if the product has solitaire specs but ALL solitaire_combined
-  // deltas are 0, the solitaire rate lookup failed completely (weight_range missing from
-  // solitaire_rates_core). Preserve existing cache rather than replacing correct tier
-  // prices with all-zero deltas — which makes every tier card show the same base price.
+  // Secondary guard: if ALL solitaire_combined deltas are 0, solitaire rate lookup
+  // failed completely — preserve existing cache to avoid wiping correct tier prices.
   const isRateMiss = combinedDeltas.length > 0 && combinedDeltas.every(d => d.delta_amount === 0);
   if (isRateMiss) {
     console.warn(`[RecalcCache] All ${combinedDeltas.length} solitaire_combined deltas = 0 for ${product_id} — rate miss, preserving existing cache`);
     invalidateCache(product_id);
     return true;
+  }
+
+  // Tertiary guard: if this run produced NO solitaire_combined deltas but the existing
+  // cache HAS them, the bulk preload missed this product's solitaire specs. Preserve
+  // the existing cache instead of wiping the correct tier prices.
+  if (combinedDeltas.length === 0) {
+    const { data: existingCombined } = await supabase
+      .from("product_delta_cache")
+      .select("id")
+      .eq("product_id", product_id)
+      .eq("component", "solitaire_combined")
+      .limit(1);
+    if (existingCombined && existingCombined.length > 0) {
+      console.warn(`[RecalcCache] New run has 0 combined deltas but cache has solitaire rows for ${product_id} — preserving existing cache`);
+      invalidateCache(product_id);
+      return true;
+    }
   }
 
   await supabase.from("product_delta_cache").delete().eq("product_id", product_id);
