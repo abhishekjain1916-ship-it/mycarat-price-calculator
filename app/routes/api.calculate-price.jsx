@@ -127,6 +127,13 @@ export const action = async ({ request }) => {
   const breakdown = { metal: null, diamonds: null, solitaires: null, gemstones: null, making: null };
   let total = 0;
   const errors = [];
+
+  // Surface transient rate-query failures explicitly. Without this, a failed
+  // query yields an empty rate map → every component prices at 0 → all grades
+  // look identical, while the client has no signal to retry.
+  if (hasDiamonds && diamondRatesRoundResult.error) errors.push(`diamond_rates_round query failed: ${diamondRatesRoundResult.error.message}`);
+  if (hasDiamonds && diamondRatesFancyResult.error) errors.push(`diamond_rates_fancy query failed: ${diamondRatesFancyResult.error.message}`);
+  if (hasSolitaires && solitaireCoreRatesResult.error) errors.push(`solitaire_rates_core query failed: ${solitaireCoreRatesResult.error.message}`);
   let metalMaterialCost = 0;
   let metalIsGold = false;
   let diamondCtTotal = 0;
@@ -338,6 +345,7 @@ export const action = async ({ request }) => {
 
   return new Response(JSON.stringify({
     success: errors.length === 0,
+    incomplete: errors.length > 0,
     errors,
     breakdown,
     total: Math.round(total * 100) / 100,

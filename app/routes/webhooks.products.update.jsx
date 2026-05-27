@@ -7,7 +7,14 @@
 import { authenticate } from "../shopify.server";
 import { supabase } from "../supabase.server";
 
+// Tags whose human label differs from a naive title-case of the tag value.
+const DISPLAY_OVERRIDES = {
+  "couple-band":  "Couple",
+  "promise-ring": "Promise",
+};
+
 function toDisplayLabel(tagValue) {
+  if (DISPLAY_OVERRIDES[tagValue]) return DISPLAY_OVERRIDES[tagValue];
   return tagValue
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
