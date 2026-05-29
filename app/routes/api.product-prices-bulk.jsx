@@ -17,7 +17,7 @@
  */
 
 import { supabase } from "../supabase.server";
-import { getCached, setCached } from "../utils/price-cache.server";
+import { getCached } from "../utils/price-cache.server";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
@@ -81,8 +81,6 @@ export const loader = async ({ request }) => {
         const lab     = row.lab_default_price     ? parseFloat(row.lab_default_price)     : null;
         const natural = row.natural_default_price ? parseFloat(row.natural_default_price) : null;
         result[id] = { lab, natural };
-        // Populate the in-memory cache so subsequent single-product calls are free
-        setCached(id, { prices: { lab: { default: lab }, natural: { default: natural } } });
       } else {
         result[id] = { lab: null, natural: null };
       }
