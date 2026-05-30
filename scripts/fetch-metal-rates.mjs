@@ -20,6 +20,7 @@ async function fetchRate(url, parseHtml) {
   const res = await fetch(url, { headers: HEADERS })
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
   const html = await res.text()
+  console.log(`[RateBot] HTML sample from ${url}:`, html.slice(0, 600).replace(/\s+/g, ' '))
   return parseHtml(html)
 }
 
