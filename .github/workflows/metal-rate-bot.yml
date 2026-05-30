@@ -18,9 +18,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Fetch & save metal rates
+      - name: Fetch HTML via curl
+        run: |
+          curl -sL \
+            -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+            -H "Accept-Language: en-IN,en;q=0.9" \
+            -H "Referer: https://www.google.com/" \
+            "https://www.bankbazaar.com/gold-rate-surat.html" -o /tmp/gold.html
+          curl -sL \
+            -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+            -H "Accept-Language: en-IN,en;q=0.9" \
+            -H "Referer: https://www.google.com/" \
+            "https://www.bankbazaar.com/silver-rate-surat.html" -o /tmp/silver.html
+          echo "Gold HTML snippet:" && grep -o '"2":\[[^]]*\]' /tmp/gold.html | head -1 || echo "(pattern not found in gold HTML)"
+          echo "Silver HTML snippet:" && grep -o '"2":\[[^]]*\]' /tmp/silver.html | head -1 || echo "(pattern not found in silver HTML)"
+
+      - name: Parse & save metal rates
         run: node scripts/fetch-metal-rates.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           RECALCULATE_SECRET: ${{ secrets.RECALCULATE_SECRET }}
+          GOLD_HTML_FILE: /tmp/gold.html
+          SILVER_HTML_FILE: /tmp/silver.html
