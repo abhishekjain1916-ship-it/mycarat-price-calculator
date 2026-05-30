@@ -18,23 +18,22 @@ const HEADERS = {
 
 async function fetchRate(url, parseHtml) {
   const res = await fetch(url, { headers: HEADERS })
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
   const html = await res.text()
-  console.log(`[RateBot] HTML sample from ${url}:`, html.slice(0, 600).replace(/\s+/g, ' '))
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url} — snippet: ${html.slice(0, 300).replace(/\s+/g, ' ')}`)
   return parseHtml(html)
 }
 
 function parseGold(html) {
   // BankBazaar embeds cityPrices JSON — cityId 2 = Surat. Field order changed 2026-05 (cityId before date).
   const match = html.match(/"2":\[{"cityId":2,"date":"(\d{4}-\d{2}-\d{2})","prices":\{"22K_1G":\d+,"24K_1G":(\d+)\}}/)
-  if (!match) throw new Error('Gold rate not found in BankBazaar HTML')
+  if (!match) throw new Error(`Gold rate not found — HTML snippet: ${html.slice(0, 400).replace(/\s+/g, ' ')}`)
   return { date: match[1], gold24k: parseFloat(match[2]) }
 }
 
 function parseSilver(html) {
   // Silver page — cityId 2 = Surat, field "1G" = per gram. Field order changed 2026-05 (cityId before date).
   const match = html.match(/"2":\[{"cityId":2,"date":"(\d{4}-\d{2}-\d{2})","prices":\{"1G":(\d+)\}}/)
-  if (!match) throw new Error('Silver rate not found in BankBazaar HTML')
+  if (!match) throw new Error(`Silver rate not found — HTML snippet: ${html.slice(0, 400).replace(/\s+/g, ' ')}`)
   return { date: match[1], silver: parseFloat(match[2]) }
 }
 
