@@ -1,16 +1,20 @@
 /**
  * INF-07 — Daily price cache rebuild
  *
- * Two triggers per day:
+ * Three triggers per day:
  *   • 10:00 AM IST (04:30 UTC) — after IBJA publishes morning gold rates
- *   • 2:05  PM IST (08:35 UTC) — after admin updates gold rates in the afternoon
+ *   • 2:00  PM IST (08:30 UTC) — fetch fresh Surat gold/silver rate (metal-rate-bot),
+ *                                 then rebuild the price cache against it
  *
- * Each trigger runs: bulk rebuild → self-healing pass (fixes same-price products).
- * No dependencies — pure Node.js setTimeout.
- * Runs in-process on Fly.io (auto_stop_machines = false keeps the machine alive).
+ * Each trigger runs: [rate fetch, 2 PM only] → bulk rebuild → self-healing pass
+ * (fixes same-price products). No dependencies — pure Node.js setTimeout.
+ * Runs in-process on Fly.io (auto_stop_machines = false keeps the machine alive),
+ * which is why the rate fetch moved here from GitHub Actions — GH's free-tier
+ * scheduled workflows can lag by hours, this fires at the exact minute.
  */
 
 import { supabase } from "../supabase.server";
+import { fetchAndSaveMetalRates } from "./metal-rate-bot.server";
 
 let started = false;
 
@@ -18,17 +22,24 @@ export function startDailyCron() {
   if (started) return;
   started = true;
 
-  scheduleTrigger("10:00 AM IST", msUntilNextUTC(4, 30));
-  scheduleTrigger("2:05 PM IST",  msUntilNextUTC(8, 35));
+  scheduleTrigger("10:00 AM IST", msUntilNextUTC(4, 30), false);
+  scheduleTrigger("2:00 PM IST",  msUntilNextUTC(8, 30), true);
 }
 
-function scheduleTrigger(label, delay) {
+function scheduleTrigger(label, delay, fetchRateFirst) {
   const hh = Math.floor(delay / 3_600_000);
   const mm = Math.floor((delay % 3_600_000) / 60_000);
   console.log(`[DailyCron] ${label} trigger scheduled — fires in ${hh}h ${mm}m`);
 
   setTimeout(async function fire() {
     console.log(`[DailyCron] ${label} trigger firing...`);
+    if (fetchRateFirst) {
+      try {
+        await fetchAndSaveMetalRates();
+      } catch (err) {
+        console.error("[DailyCron] Metal rate fetch failed — rebuilding with last known rate:", err.message);
+      }
+    }
     await runBulkRebuild(label);
     await healSamePriceProducts();
     setTimeout(fire, 24 * 60 * 60 * 1000);
