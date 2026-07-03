@@ -1,5 +1,6 @@
 name: Metal Rate Bot — Surat (Gold 24K & Silver)
 
+on:
   workflow_dispatch:         # manual trigger for testing
 
 jobs:
