@@ -1,8 +1,5 @@
 name: Metal Rate Bot — Surat (Gold 24K & Silver)
 
-on:
-  schedule:
-    - cron: '30 8 * * *'   # 2:00 PM IST = 08:30 UTC daily
   workflow_dispatch:         # manual trigger for testing
 
 jobs:
