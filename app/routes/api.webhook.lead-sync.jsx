@@ -4,8 +4,10 @@ const WEBHOOK_SECRET = process.env.LEAD_SYNC_WEBHOOK_SECRET;
 
 function normalize(table, record) {
   if (table === "wa_schedules") {
+    const LEAD_ONLY_TOPICS = new Set(["Visit Boutique", "Initiate Exchange", "Upload Design"]);
+    const topic = record.trigger_context?.topic;
     return {
-      leadType: record.trigger_context?.topic || "Talk to Experts",
+      leadType: LEAD_ONLY_TOPICS.has(topic) ? topic : "Talk to Experts",
       name:     record.wa_name,
       phone:    record.wa_phone,
       email:    record.trigger_context?.email || "",
